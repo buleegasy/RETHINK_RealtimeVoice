@@ -13,7 +13,7 @@ export const voiceRouter = new Hono<{ Bindings: Env }>();
 async function extractAndVerifyUser(c: any): Promise<AuthTokenPayload | null> {
   const authHeader = c.req.header('Authorization');
   let token = '';
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  if (authHeader?.startsWith('Bearer ')) {
     token = authHeader.slice(7).trim();
   }
   if (!token) {

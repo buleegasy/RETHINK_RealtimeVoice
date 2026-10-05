@@ -59,13 +59,16 @@ export const SessionRestoreModal: React.FC<SessionRestoreModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="restore-modal-title"
-      onClick={onClose}
+      tabIndex={-1}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
       className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 select-none"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-[#ffffff] w-full max-w-md max-h-[92dvh] sm:max-h-[90vh] rounded-2xl sm:rounded-3xl border border-[#bbf7d0] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-      >
+      <div className="bg-[#ffffff] w-full max-w-md max-h-[92dvh] sm:max-h-[90vh] rounded-2xl sm:rounded-3xl border border-[#bbf7d0] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <div className="bg-[#f0fdf4] px-4 sm:px-6 py-3 sm:py-4 border-b border-[#bbf7d0] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 text-[#166534]">
             <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />

@@ -23,7 +23,7 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Monorepo TypeCheck
         run: npm run typecheck
@@ -38,7 +38,7 @@ jobs:
         run: npm run build
 
       - name: SonarCloud Code Analysis
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarcloud-github-action@cb25299f0332e16660e5027423042266a3d0b806 # v3.1.0
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

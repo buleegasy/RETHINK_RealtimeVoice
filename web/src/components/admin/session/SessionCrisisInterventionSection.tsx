@@ -15,6 +15,7 @@ import type {
   AdminCrisisItem,
   UnmaskedIdentity,
 } from '../../../types';
+import { copyToClipboard } from '../../../lib/clipboard';
 
 interface SessionCrisisInterventionSectionProps {
   session: AdminSessionItem;
@@ -42,22 +43,11 @@ export const SessionCrisisInterventionSection: React.FC<SessionCrisisInterventio
   const [copiedPhone, setCopiedPhone] = useState(false);
 
   const copyContact = async (text: string) => {
-    try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
+    const success = await copyToClipboard(text);
+    if (success) {
       setCopiedPhone(true);
       setTimeout(() => setCopiedPhone(false), 2000);
-    } catch {
+    } else {
       setCopiedPhone(false);
     }
   };

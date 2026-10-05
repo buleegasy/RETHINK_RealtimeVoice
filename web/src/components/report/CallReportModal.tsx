@@ -35,7 +35,13 @@ export const CallReportModal: React.FC = () => {
       <div
         role="dialog"
         aria-modal="true"
-        onClick={() => setReportModalOpen(false)}
+        tabIndex={-1}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setReportModalOpen(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setReportModalOpen(false);
+        }}
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm select-none"
       >
         <motion.div
@@ -43,7 +49,6 @@ export const CallReportModal: React.FC = () => {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ duration: 0.2 }}
-          onClick={(e) => e.stopPropagation()}
           className="w-full max-w-lg bg-white rounded-2xl border-2 border-black/15 shadow-xl overflow-hidden flex flex-col max-h-[90vh]"
         >
           <div className="px-6 py-4 border-b border-black/10 flex items-center justify-between bg-[#f8f9fa]">

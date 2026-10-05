@@ -7,6 +7,15 @@ export const WORKER_ORIGIN =
     ? ''
     : DEFAULT_WORKER_ORIGIN);
 
+const SAFE_AUTH_TOKEN_REGEX = /^[A-Za-z0-9-_=.]+$/;
+
+function sanitizeAuthToken(token: unknown): string | null {
+  if (typeof token === 'string' && SAFE_AUTH_TOKEN_REGEX.test(token.trim())) {
+    return token.trim();
+  }
+  return null;
+}
+
 export function getWsUrl(options?: {
   userId?: string;
   username?: string;
@@ -19,7 +28,7 @@ export function getWsUrl(options?: {
   if (options?.username) params.set('username', options.username);
   if (options?.sessionId) params.set('sessionId', options.sessionId);
 
-  const token = options?.token || resolveStoredAuthToken('/api/voice/ws');
+  const token = sanitizeAuthToken(options?.token) || resolveStoredAuthToken('/api/voice/ws');
   if (token) {
     params.set('token', token);
   }
@@ -47,22 +56,25 @@ function resolveStoredAuthToken(targetPath: string): string | null {
       const rawTeacher = localStorage.getItem('rethink_teacher_auth');
       if (rawTeacher) {
         const parsed = JSON.parse(rawTeacher);
-        if (parsed?.token) return parsed.token;
+        const safeToken = sanitizeAuthToken(parsed?.token);
+        if (safeToken) return safeToken;
       }
     }
-    const directToken = localStorage.getItem('rethink_auth_token');
+    const directToken = sanitizeAuthToken(localStorage.getItem('rethink_auth_token'));
     if (directToken) return directToken;
 
     const rawAuth = localStorage.getItem('rethink_auth');
     if (rawAuth) {
       const parsed = JSON.parse(rawAuth);
-      if (parsed?.token) return parsed.token;
+      const safeToken = sanitizeAuthToken(parsed?.token);
+      if (safeToken) return safeToken;
     }
 
     const rawTeacher = localStorage.getItem('rethink_teacher_auth');
     if (rawTeacher) {
       const parsed = JSON.parse(rawTeacher);
-      if (parsed?.token) return parsed.token;
+      const safeToken = sanitizeAuthToken(parsed?.token);
+      if (safeToken) return safeToken;
     }
   } catch (err) {
     console.warn('[ApiFetch] 读取本地凭证异常:', err);

@@ -70,7 +70,7 @@ const DEDUP_WINDOW_MS = 60_000;
  * 职责：异步生成 DeepSeek V4 Flash 结构化简报、加密学生隐私身份、记忆归纳与数据库存档
  */
 export class SessionReporter {
-  private static deduplicationMap = new Map<string, PersistTaskRecord>();
+  private static readonly deduplicationMap = new Map<string, PersistTaskRecord>();
 
   public static clearDeduplicationCache(): void {
     SessionReporter.deduplicationMap.clear();

@@ -20,6 +20,17 @@ export interface MiniMaxClientOptions {
   token?: string;
 }
 
+function validateWebSocketUrl(rawUrl: string): string {
+  const parsed = new URL(
+    rawUrl,
+    typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+  );
+  if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+    throw new Error(`[MiniMaxClient] 非法 WebSocket 协议: ${parsed.protocol}`);
+  }
+  return parsed.toString();
+}
+
 export class MiniMaxRealtimeClient {
   private ws: WebSocket | null = null;
   private readonly options: MiniMaxClientOptions;
@@ -73,7 +84,8 @@ export class MiniMaxRealtimeClient {
       });
 
     try {
-      const ws = new WebSocket(wsUrl);
+      const sanitizedUrl = validateWebSocketUrl(wsUrl);
+      const ws = new WebSocket(sanitizedUrl);
       this.ws = ws;
 
       ws.onopen = () => {

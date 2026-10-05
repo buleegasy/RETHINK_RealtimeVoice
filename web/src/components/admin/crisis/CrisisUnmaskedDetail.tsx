@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UserCheck, Phone, Copy, Check, FileCheck2, CheckCircle2, Save } from 'lucide-react';
 import type { AdminCrisisItem, DispositionStatus, UnmaskedIdentity } from '../../../types';
 import { useAdminStore } from '../../../store/adminStore';
+import { copyToClipboard } from '../../../lib/clipboard';
 
 interface CrisisUnmaskedDetailProps {
   crisis: AdminCrisisItem;
@@ -21,22 +22,11 @@ export const CrisisUnmaskedDetail: React.FC<CrisisUnmaskedDetailProps> = ({
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const copyContact = async (text: string) => {
-    try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
+    const success = await copyToClipboard(text);
+    if (success) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
       setCopied(false);
     }
   };

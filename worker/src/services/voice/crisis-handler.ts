@@ -63,8 +63,7 @@ export class CrisisHandler {
 
     const task = (async () => {
       let attempts = 0;
-      let sent = false;
-      while (attempts < 3 && !sent) {
+      while (attempts < 3) {
         attempts++;
         try {
           const res = await sendCrisisWebhook(this.webhookUrl, {
@@ -76,13 +75,12 @@ export class CrisisHandler {
             coreConcerns: concerns,
           });
           if (res.success) {
-            sent = true;
             break;
           }
         } catch (err) {
           console.warn(`[CrisisHandler] Webhook 发送第 ${attempts} 次尝试失败:`, err);
         }
-        if (!sent && attempts < 3) {
+        if (attempts < 3) {
           await new Promise((resolve) => setTimeout(resolve, attempts * 800));
         }
       }

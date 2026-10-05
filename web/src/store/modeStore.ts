@@ -60,19 +60,18 @@ const detectInitialMode = (): { mode: AppRunMode; deviceId: string } => {
   const storedDevice = safeGetItem('rethink_kiosk_device') || 'kiosk-booth-01';
   const hasAuthToken = !!safeGetItem('rethink_auth_token');
 
-  const effectiveMode: AppRunMode =
-    storedMode === 'admin'
-      ? 'admin'
-      : storedMode === 'kiosk' && hasAuthToken
-      ? 'kiosk'
-      : 'web';
+  let effectiveMode: AppRunMode = 'web';
+  if (storedMode === 'admin') {
+    effectiveMode = 'admin';
+  } else if (storedMode === 'kiosk' && hasAuthToken) {
+    effectiveMode = 'kiosk';
+  }
 
   return {
     mode: effectiveMode,
     deviceId: storedDevice,
   };
 };
-
 
 const getStoredHistory = (): ConsultationHistoryRecord[] => {
   const raw = safeGetItem('rethink_user_history');
@@ -131,7 +130,7 @@ export const useModeStore = create<ModeState>((set) => ({
 
   addHistoryRecord: (record) =>
     set((state) => {
-      const updated = [record, ...state.historyRecords].slice(0, 20); 
+      const updated = [record, ...state.historyRecords].slice(0, 20);
       safeSetItem('rethink_user_history', JSON.stringify(updated));
       return { historyRecords: updated };
     }),

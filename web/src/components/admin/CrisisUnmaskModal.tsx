@@ -59,13 +59,16 @@ export const CrisisUnmaskModal: React.FC<CrisisUnmaskModalProps> = ({ crisis, on
       role="dialog"
       aria-modal="true"
       aria-labelledby="crisis-unmask-title"
-      onClick={onClose}
+      tabIndex={-1}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
       className="fixed inset-0 z-50 bg-[#000000]/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4 select-none"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-[#ffffff] w-full max-w-lg max-h-[92dvh] sm:max-h-[90vh] rounded-2xl sm:rounded-3xl border border-[#c4c7c5] shadow-xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-      >
+      <div className="bg-[#ffffff] w-full max-w-lg max-h-[92dvh] sm:max-h-[90vh] rounded-2xl sm:rounded-3xl border border-[#c4c7c5] shadow-xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <div className="bg-[#fce8e6] px-4 sm:px-6 py-3 sm:py-4 border-b border-[#f2b8b5] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 sm:gap-2.5">
             <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 text-[#ba1a1a]" />

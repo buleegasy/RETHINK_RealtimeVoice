@@ -217,9 +217,7 @@ export const useAdminStore = create<AdminState>((set, get) => {
       const currentCrisis = get().crises.find((c) => c.sessionId === sessionId);
       const currentSession = get().sessions.find((s) => s.sessionId === sessionId);
       const finalNote =
-        note !== undefined
-          ? note
-          : currentCrisis?.dispositionNote || currentSession?.dispositionNote || '';
+        note ?? (currentCrisis?.dispositionNote || currentSession?.dispositionNote || '');
 
       set((state) => ({
         crises: state.crises.map((c) =>
@@ -341,7 +339,7 @@ export const useAdminStore = create<AdminState>((set, get) => {
             osc.disconnect();
             gain.disconnect();
             if (ctx.state !== 'closed') {
-              ctx.close();
+              void ctx.close().catch(() => {});
             }
           } catch {}
         };
