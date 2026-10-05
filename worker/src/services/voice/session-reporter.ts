@@ -89,11 +89,17 @@ export class SessionReporter {
   }> {
     const { sessionId } = options;
     const now = Date.now();
+    const MAX_DEDUP_MAP_SIZE = 500;
 
     for (const [id, item] of SessionReporter.deduplicationMap.entries()) {
       if (now - item.timestamp > DEDUP_WINDOW_MS) {
         SessionReporter.deduplicationMap.delete(id);
       }
+    }
+
+    if (SessionReporter.deduplicationMap.size >= MAX_DEDUP_MAP_SIZE) {
+      const oldestKey = SessionReporter.deduplicationMap.keys().next().value;
+      if (oldestKey) SessionReporter.deduplicationMap.delete(oldestKey);
     }
 
     if (sessionId) {

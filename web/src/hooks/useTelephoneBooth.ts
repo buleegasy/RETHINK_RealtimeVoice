@@ -38,10 +38,18 @@ export function useTelephoneBooth({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (
+      const isInteractiveElement =
         target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-      ) {
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'BUTTON' ||
+          target.tagName === 'A' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable ||
+          target.getAttribute?.('role') === 'button' ||
+          Boolean(target.closest?.('button, a, select, [role="button"]')));
+
+      if (isInteractiveElement) {
         return;
       }
 

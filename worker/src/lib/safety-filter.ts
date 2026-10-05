@@ -266,6 +266,22 @@ const CRISIS_KEYWORDS: string[] = [
   '约死',
   '相约自杀',
   '相约轻生',
+  // 英文危机表达 (小写匹配)
+  'suicide',
+  'kill myself',
+  'want to die',
+  'end my life',
+  'hang myself',
+  'slit my wrist',
+  'slit my wrists',
+  'commit suicide',
+  'take my own life',
+  // 拼音拼写表达
+  'zisha',
+  'xiangsi',
+  'tiaolou',
+  'buxianghuo',
+  'buxianghuole',
 ];
 
 const acAutomaton = new AhoCorasick(CRISIS_KEYWORDS);
@@ -377,18 +393,31 @@ const NEGATION_PREFIX_PATTERNS = [
 // 5. 规则判决与子句分析辅助函数
 // -------------------------------------------------------------
 
+function isClauseBoundary(text: string, index: number): boolean {
+  const char = text[index];
+  if (/[,，.。!！?？;；\n~～]/.test(char)) return true;
+  if (/[\s\u3000]/.test(char)) {
+    // 若空白符两侧存在中文字符，则为流式 ASR 中文短语停顿或子句分界
+    const prev = index > 0 ? text[index - 1] : '';
+    const next = index < text.length - 1 ? text[index + 1] : '';
+    if (/[\u4e00-\u9fa5]/.test(prev) || /[\u4e00-\u9fa5]/.test(next)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function extractSurroundingClause(
   text: string,
   start: number,
   end: number,
 ): { clause: string; start: number; end: number } {
-  const punctuations = /[,，.。!！?？;；\n~～]/;
   let clauseStart = start;
-  while (clauseStart > 0 && !punctuations.test(text[clauseStart - 1])) {
+  while (clauseStart > 0 && !isClauseBoundary(text, clauseStart - 1)) {
     clauseStart--;
   }
   let clauseEnd = end;
-  while (clauseEnd < text.length && !punctuations.test(text[clauseEnd])) {
+  while (clauseEnd < text.length && !isClauseBoundary(text, clauseEnd)) {
     clauseEnd++;
   }
   return {
@@ -658,6 +687,13 @@ export function evaluateCrisisMatch(
     };
   }
 
+  if (/\b(?:don't|do not|never|did not|didn't)(?:\s+really)?$/i.test(prefixInClause.trim())) {
+    return {
+      isDisambiguated: true,
+      reason: `英文否定前缀消歧通过: "${prefixInClause}${match.keyword}"`,
+    };
+  }
+
   // 6. 兜底判定：未消歧的真实危机词
   return { isDisambiguated: false, reason: '未经消歧的有效危机词' };
 }
@@ -667,7 +703,7 @@ export function disambiguateCrisis(text: string): L1DisambiguationResult {
   const clean = text.trim();
   if (!clean) return { isCrisis: false, matches: [] };
 
-  const rawMatches = acAutomaton.search(clean);
+  const rawMatches = acAutomaton.search(clean.toLowerCase());
   if (rawMatches.length === 0) {
     return { isCrisis: false, matches: [] };
   }

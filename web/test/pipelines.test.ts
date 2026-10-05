@@ -89,6 +89,14 @@ describe('五大扩展管线契约与核心算法验证 (Pipelines & Providers)'
       const wrongDecrypted = await crypto.decrypt(cipher, 'WRONG_SECRET_KEY');
       expect(wrongDecrypted).toBe('');
     });
+
+    it('当未配置密钥时，encrypt 严格抛出安全异常，拒绝以弱口令默认兜底 (P2-11 修复验证)', async () => {
+      const cryptoWithoutSecret = new WebCryptoAesGcm('');
+      await expect(cryptoWithoutSecret.encrypt('敏感内容')).rejects.toThrow(
+        'missing crypto secret key',
+      );
+      expect(await cryptoWithoutSecret.decrypt('some_cipher')).toBe('');
+    });
   });
 
   describe('Pillar 4: 中间层转写与停顿切分管线', () => {

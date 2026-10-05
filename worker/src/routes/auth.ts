@@ -4,36 +4,8 @@ import { hashPassword, verifyPassword, signAuthToken, resolveJwtSecret } from '.
 
 export const authRouter = new Hono<{ Bindings: Env }>();
 
-let usersTableInitialized = false;
-
-export async function ensureUsersTable(env: Env): Promise<void> {
-  if (!env.DB || usersTableInitialized) return;
-  try {
-    await env.DB.prepare(
-      `
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        username TEXT UNIQUE,
-        password_hash TEXT,
-        display_name TEXT,
-        role TEXT DEFAULT 'user',
-        created_at INTEGER DEFAULT (unixepoch())
-      )
-    `,
-    ).run();
-
-    const defaultTeacherHash = await hashPassword('counselor2026');
-    await env.DB.prepare(
-      `INSERT OR IGNORE INTO users (id, username, password_hash, display_name, role)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-      .bind('usr_teacher', 'teacher', defaultTeacherHash, '校心理专职教师', 'teacher')
-      .run();
-
-    usersTableInitialized = true;
-  } catch (err) {
-    console.warn('[Auth] users 数据表校验跳过或已存在:', err);
-  }
+export async function ensureUsersTable(_env: Env): Promise<void> {
+  // 数据库表结构及初始化账号统一由 migrations/0001_init_schema.sql 维护，彻底避免冷启动 DDL 锁冲突
 }
 
 // 内存测试/无数据库兜底用户表 (加盐哈希存储)
@@ -293,10 +265,25 @@ interface KioskRateLimitEntry {
 }
 
 const kioskRateLimits = new Map<string, KioskRateLimitEntry>();
+const MAX_RATE_LIMIT_ENTRIES = 1000;
 const KIOSK_MAX_ATTEMPTS_PER_MIN = 30;
 
 function isKioskRateLimited(ip: string): boolean {
   const now = Date.now();
+
+  // 超过容量上限时主动扫描清理过期项，防范内存泄露与 IP 碰撞攻击
+  if (kioskRateLimits.size >= MAX_RATE_LIMIT_ENTRIES) {
+    for (const [key, val] of kioskRateLimits.entries()) {
+      if (now > val.resetAt) {
+        kioskRateLimits.delete(key);
+      }
+    }
+    if (kioskRateLimits.size >= MAX_RATE_LIMIT_ENTRIES) {
+      const oldestKey = kioskRateLimits.keys().next().value;
+      if (oldestKey) kioskRateLimits.delete(oldestKey);
+    }
+  }
+
   const entry = kioskRateLimits.get(ip);
   if (!entry || now > entry.resetAt) {
     kioskRateLimits.set(ip, { count: 1, resetAt: now + 60_000 });
@@ -315,15 +302,23 @@ export function resetKioskRateLimits(): void {
 
 function checkKioskDeviceKey(c: any, body: any, env: Env): { valid: boolean; error?: string } {
   const configuredKey = env.KIOSK_DEVICE_KEY;
+  const isProduction = env.ENVIRONMENT === 'production';
+
   if (!configuredKey) {
+    if (isProduction) {
+      return {
+        valid: false,
+        error: '设备密钥校验失败: 生产环境未配置 KIOSK_DEVICE_KEY 凭据',
+      };
+    }
     return { valid: true };
   }
 
   const incomingKey =
     c.req.header('X-Kiosk-Device-Key') ||
     c.req.header('x-kiosk-device-key') ||
-    body.deviceKey ||
-    body.device_key;
+    body?.deviceKey ||
+    body?.device_key;
 
   if (!incomingKey || incomingKey.trim() !== configuredKey.trim()) {
     return {

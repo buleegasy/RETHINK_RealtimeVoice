@@ -3,7 +3,6 @@ import type { ISessionCrypto } from './types';
 const PBKDF2_SALT_BYTES = 16;
 const GCM_IV_BYTES = 12;
 const PBKDF2_ITERATIONS = 100_000;
-const DEFAULT_PASSCODE = 'teacher-safe-2026';
 
 function getCryptoSubtle(): SubtleCrypto | null {
   const g = globalThis as any;
@@ -38,11 +37,18 @@ export class WebCryptoAesGcm implements ISessionCrypto {
       typeof import.meta !== 'undefined'
         ? (import.meta as any).env?.VITE_SESSION_CRYPTO_KEY
         : undefined;
-    this.defaultSecret = customKey || envKey || DEFAULT_PASSCODE;
+    this.defaultSecret = customKey || envKey || '';
   }
 
   public async encrypt(plainText: string, passcode?: string): Promise<string> {
     if (!plainText) return '';
+    const secret = passcode || this.defaultSecret;
+    if (!secret) {
+      throw new Error(
+        'Encryption unavailable: missing crypto secret key (passcode or VITE_SESSION_CRYPTO_KEY required)',
+      );
+    }
+
     const subtle = getCryptoSubtle();
     const g = globalThis as any;
     const cryptoObj = typeof g.window !== 'undefined' ? g.window.crypto : g.crypto;
@@ -50,7 +56,6 @@ export class WebCryptoAesGcm implements ISessionCrypto {
       throw new Error('Encryption unavailable: WebCrypto not supported');
     }
 
-    const secret = passcode || this.defaultSecret;
     const salt = cryptoObj.getRandomValues(new Uint8Array(PBKDF2_SALT_BYTES));
     const iv = cryptoObj.getRandomValues(new Uint8Array(GCM_IV_BYTES));
     const key = await derivePbkdf2Key(subtle, secret, salt);
@@ -68,12 +73,14 @@ export class WebCryptoAesGcm implements ISessionCrypto {
 
   public async decrypt(cipherText: string, passcode?: string): Promise<string> {
     if (!cipherText) return '';
+    const secret = passcode || this.defaultSecret;
+    if (!secret) return '';
+
     const subtle = getCryptoSubtle();
     if (!subtle) return '';
 
     try {
       const combined = this.base64ToUint8(cipherText);
-      const secret = passcode || this.defaultSecret;
 
       // 1. 标准端云统一格式: [Salt 16B] + [IV 12B] + [Ciphertext + AuthTag]
       if (combined.length >= PBKDF2_SALT_BYTES + GCM_IV_BYTES + 16) {

@@ -1,75 +1,11 @@
 import type { Env, SessionRecord } from '../types';
 
-let isSchemaInitialized = false;
 const memorySessions: SessionRecord[] = [];
+const MAX_MEMORY_SESSIONS = 200;
 
-export async function ensureSchemaOnce(db?: D1Database): Promise<void> {
-  if (isSchemaInitialized || !db) return;
-  try {
-    await db
-      .prepare(
-        `
-      CREATE TABLE IF NOT EXISTS school_sessions (
-        id TEXT PRIMARY KEY,
-        session_id TEXT UNIQUE,
-        duration INTEGER DEFAULT 0,
-        stage TEXT,
-        is_crisis INTEGER DEFAULT 0,
-        crisis_level INTEGER DEFAULT 0,
-        crisis_summary TEXT,
-        core_concerns TEXT,
-        emotional_valence REAL DEFAULT 0,
-        encrypted_real_identity TEXT,
-        deidentified_report TEXT,
-        disposition_status TEXT DEFAULT 'pending_contact',
-        disposition_note TEXT,
-        is_deleted INTEGER DEFAULT 0,
-        deleted_at INTEGER DEFAULT NULL,
-        delete_reason TEXT DEFAULT NULL,
-        deleted_by TEXT DEFAULT NULL,
-        created_at INTEGER DEFAULT (unixepoch())
-      )
-    `,
-      )
-      .run();
-
-    try {
-      await db.prepare('ALTER TABLE school_sessions ADD COLUMN is_deleted INTEGER DEFAULT 0').run();
-    } catch {}
-    try {
-      await db
-        .prepare('ALTER TABLE school_sessions ADD COLUMN deleted_at INTEGER DEFAULT NULL')
-        .run();
-    } catch {}
-    try {
-      await db
-        .prepare('ALTER TABLE school_sessions ADD COLUMN delete_reason TEXT DEFAULT NULL')
-        .run();
-    } catch {}
-    try {
-      await db.prepare('ALTER TABLE school_sessions ADD COLUMN deleted_by TEXT DEFAULT NULL').run();
-    } catch {}
-
-    // 物理级彻底清除任何假数据与测试案例
-    try {
-      await db
-        .prepare(
-          `
-        DELETE FROM school_sessions 
-        WHERE session_id LIKE 'sess_sample_%' 
-           OR session_id LIKE 'mock_%' 
-           OR id LIKE 'sess_sample_%' 
-           OR id LIKE 'mock_%'
-      `,
-        )
-        .run();
-    } catch {}
-
-    isSchemaInitialized = true;
-  } catch (e) {
-    console.warn('[SessionRepository ensureSchemaOnce error]:', e);
-    isSchemaInitialized = true;
-  }
+export async function ensureSchemaOnce(_db?: D1Database): Promise<void> {
+  // 数据库 Schema 统一由 migrations/0001_init_schema.sql 维护
+  // 彻底移除请求主链路中的动态 DDL 执行，消除 SQLite 写锁冲突与冷启动延迟
 }
 
 export class SessionRepository {
@@ -84,6 +20,9 @@ export class SessionRepository {
       };
     } else {
       memorySessions.unshift(record);
+      if (memorySessions.length > MAX_MEMORY_SESSIONS) {
+        memorySessions.pop();
+      }
     }
 
     if (env.DB) {

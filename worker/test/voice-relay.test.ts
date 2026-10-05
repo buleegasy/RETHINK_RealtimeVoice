@@ -270,6 +270,38 @@ describe('Worker 路由与健康检查测试', () => {
       expect(data.ok).toBe(true);
     });
 
+    it('POST /api/voice/chat 在生产环境下无有效身份直接返回 401 拦截', async () => {
+      const res = await app.request(
+        '/api/voice/chat',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: '你好' }),
+        },
+        prodEnv,
+      );
+      expect(res.status).toBe(401);
+      const data: any = await res.json();
+      expect(data.ok).toBe(false);
+      expect(data.error).toContain('Unauthorized');
+    });
+
+    it('POST /api/voice/knowledge 在生产环境下无有效身份直接返回 401 拦截', async () => {
+      const res = await app.request(
+        '/api/voice/knowledge',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: '考试焦虑' }),
+        },
+        prodEnv,
+      );
+      expect(res.status).toBe(401);
+      const data: any = await res.json();
+      expect(data.ok).toBe(false);
+      expect(data.error).toContain('Unauthorized');
+    });
+
     it('SessionReporter.generateAndPersist 对同一 sessionId 的并发调用命中排重锁，防止重复执行', async () => {
       SessionReporter.clearDeduplicationCache();
       const dedupSessionId = `sess_dedup_test_${Date.now()}`;

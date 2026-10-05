@@ -16,6 +16,8 @@ export class PlaybackQueue {
   private nextPlayTime: number = 0;
   private playbackStartCtxTime: number | null = null;
   private isSpeaking: boolean = false;
+  private playbackEpoch: number = 0;
+  private pendingCleanupSources: AudioBufferSourceNode[] = [];
   public stopPlaybackTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly JITTER_TARGET_SEC: number = 0.08;
@@ -49,7 +51,7 @@ export class PlaybackQueue {
     base64Chunk: string,
     ctx: AudioContext,
     outputGainNode: GainNode,
-    analyserNode: AnalyserNode | null
+    analyserNode: AnalyserNode | null,
   ): void {
     this.cancelPendingFadeOut(ctx, outputGainNode);
 
@@ -74,7 +76,7 @@ export class PlaybackQueue {
   public flushJitterBuffer(
     ctx: AudioContext,
     outputGainNode: GainNode,
-    analyserNode: AnalyserNode | null
+    analyserNode: AnalyserNode | null,
   ): void {
     if (outputGainNode.gain.value < 0.84) {
       outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
@@ -106,7 +108,9 @@ export class PlaybackQueue {
       this.nextPlayTime += buffer.duration;
       this.scheduledSources.push(source);
 
+      const epochAtSchedule = this.playbackEpoch;
       source.onended = () => {
+        if (this.playbackEpoch !== epochAtSchedule) return;
         const idx = this.scheduledSources.indexOf(source);
         if (idx !== -1) {
           this.scheduledSources.splice(idx, 1);
@@ -125,7 +129,7 @@ export class PlaybackQueue {
     audioBuffer: AudioBuffer,
     outputGainNode: GainNode,
     analyserNode: AnalyserNode | null,
-    onEnded?: () => void
+    onEnded?: () => void,
   ): void {
     outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
     outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
@@ -137,7 +141,9 @@ export class PlaybackQueue {
       source.connect(analyserNode);
     }
 
+    const epochAtPlay = this.playbackEpoch;
     source.onended = () => {
+      if (this.playbackEpoch !== epochAtPlay) return;
       const idx = this.scheduledSources.indexOf(source);
       if (idx !== -1) {
         this.scheduledSources.splice(idx, 1);
@@ -158,11 +164,12 @@ export class PlaybackQueue {
   public stopPlayback(
     ctx: AudioContext | null,
     outputGainNode: GainNode | null,
-    fadeDurationMs: number = 150
+    fadeDurationMs: number = 150,
   ): void {
     if (!ctx || !outputGainNode) return;
     const wasSpeaking = this.isSpeaking;
 
+    this.playbackEpoch++;
     if (this.stopPlaybackTimer) {
       clearTimeout(this.stopPlaybackTimer);
       this.stopPlaybackTimer = null;
@@ -176,6 +183,12 @@ export class PlaybackQueue {
 
     const sourcesToStop = [...this.scheduledSources];
     this.scheduledSources = [];
+    this.pendingCleanupSources.push(...sourcesToStop);
+
+    // 立即注销旧节点的 onended 回调，杜绝异步回调竞态
+    for (const s of sourcesToStop) {
+      s.onended = null;
+    }
 
     if ((sourcesToStop.length === 0 && !wasSpeaking) || fadeDurationMs <= 0) {
       try {
@@ -188,6 +201,7 @@ export class PlaybackQueue {
           s.disconnect();
         } catch {}
       }
+      this.pendingCleanupSources = [];
       this.nextPlayTime = ctx.currentTime;
       return;
     }
@@ -212,16 +226,22 @@ export class PlaybackQueue {
       }
     }
 
+    const timerEpoch = this.playbackEpoch;
     this.stopPlaybackTimer = setTimeout(() => {
       this.stopPlaybackTimer = null;
-      for (const s of sourcesToStop) {
+      for (const s of this.pendingCleanupSources) {
         try {
           s.disconnect();
         } catch {}
       }
-      outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
-      outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
-      this.nextPlayTime = ctx.currentTime;
+      this.pendingCleanupSources = [];
+      if (this.playbackEpoch === timerEpoch) {
+        try {
+          outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
+          outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
+          this.nextPlayTime = ctx.currentTime;
+        } catch {}
+      }
     }, fadeDurationMs + 20);
   }
 
@@ -229,6 +249,12 @@ export class PlaybackQueue {
     if (this.stopPlaybackTimer) {
       clearTimeout(this.stopPlaybackTimer);
       this.stopPlaybackTimer = null;
+      for (const s of this.pendingCleanupSources) {
+        try {
+          s.disconnect();
+        } catch {}
+      }
+      this.pendingCleanupSources = [];
       try {
         outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
         outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);

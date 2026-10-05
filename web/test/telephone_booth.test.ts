@@ -60,6 +60,32 @@ describe('useTelephoneBooth 物理键盘事件监听与管理后台隔离测试'
     document.body.removeChild(input);
   });
 
+  it('普通模式 (enabled: true): 聚焦在 BUTTON 或 A 链接时 Space/Enter 不触发摘机 (P3-13 修复验证)', () => {
+    const onPickUp = vi.fn();
+
+    renderHook(() =>
+      useTelephoneBooth({
+        enabled: true,
+        onPickUp,
+        onHangUp: vi.fn(),
+        onInterrupt: vi.fn(),
+        onToggleMute: vi.fn(),
+      }),
+    );
+
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+
+    act(() => {
+      const event = new KeyboardEvent('keydown', { code: 'Space', bubbles: true });
+      Object.defineProperty(event, 'target', { value: button });
+      window.dispatchEvent(event);
+    });
+
+    expect(onPickUp).not.toHaveBeenCalled();
+    document.body.removeChild(button);
+  });
+
   it('教师管理后台模式 (enabled: false): 按压 Space/Enter 严禁触发拨号摘机与麦克风占用', () => {
     const onPickUp = vi.fn();
     const onHangUp = vi.fn();

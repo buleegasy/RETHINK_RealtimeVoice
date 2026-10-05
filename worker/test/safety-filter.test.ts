@@ -80,6 +80,26 @@ describe('L1 边缘硬过滤与否定消歧引擎 (Aho-Corasick + 多维语境�
       expect(res.matches.find((m) => m.keyword === '自杀')?.isDisambiguated).toBe(true);
       expect(res.matches.find((m) => m.keyword === '跳楼')?.isDisambiguated).toBe(false);
     });
+
+    it('流式 ASR 无标点仅空格分词: 绝不导致真实危机被消歧词静默吞没 (P0-2 修复验证)', () => {
+      expect(isL1Crisis('大家劝阻他跳楼 我想跳楼')).toBe(true);
+      expect(isL1Crisis('听说网上有人自杀 我现在站在天台')).toBe(true);
+      expect(isL1Crisis('刚才拦住同学跳楼 我现在也想自杀')).toBe(true);
+
+      const res = disambiguateCrisis('大家劝阻他跳楼 我想跳楼');
+      expect(res.isCrisis).toBe(true);
+      expect(res.matches[0].isDisambiguated).toBe(true); // 前半句劝阻消歧
+      expect(res.matches[1].isDisambiguated).toBe(false); // 后半句真实危机告警
+    });
+
+    it('高频英文与拼音危机关键词 100% 灵敏拦截及否定消歧 (P2-10 修复验证)', () => {
+      expect(isL1Crisis('I want to die right now')).toBe(true);
+      expect(isL1Crisis('I will commit suicide tonight')).toBe(true);
+      expect(isL1Crisis('woshi zhende xiangsi')).toBe(true);
+      expect(isL1Crisis('daodi shei xiang zisha')).toBe(true);
+      // 英文单重否定消歧放行
+      expect(isL1Crisis('I do not want to die')).toBe(false);
+    });
   });
 
   describe('AC 自动机单趟扫描性能基准测试', () => {

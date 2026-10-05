@@ -2,7 +2,6 @@ import type { Env, SituationalMemory } from '../types';
 
 const memoryCache = new Map<string, SituationalMemory>();
 const MAX_MEMORY_CACHE_SIZE = 500;
-let memoryTableReady = false;
 
 function setMemoryCache(key: string, value: SituationalMemory): void {
   if (memoryCache.size >= MAX_MEMORY_CACHE_SIZE && !memoryCache.has(key)) {
@@ -27,54 +26,8 @@ function safeParseJson<T>(raw: string | undefined | null, fallback: T): T {
   }
 }
 
-async function ensureMemoryTable(env: Env): Promise<void> {
-  if (!env?.DB || memoryTableReady) return;
-  try {
-    await env.DB.prepare(
-      `
-      CREATE TABLE IF NOT EXISTS user_situational_memories (
-        user_id TEXT PRIMARY KEY,
-        user_name TEXT,
-        identity_context TEXT,
-        core_concerns TEXT,
-        significant_others TEXT,
-        recent_situations TEXT,
-        effective_strategies TEXT,
-        summary_paragraph TEXT,
-        memory_json TEXT,
-        last_updated INTEGER,
-        updated_at INTEGER
-      )
-    `,
-    ).run();
-
-    // 动态兼容已有数据库的旧结构
-    try {
-      await env.DB.prepare(
-        'ALTER TABLE user_situational_memories ADD COLUMN memory_json TEXT',
-      ).run();
-    } catch (_err) {
-      // 兼容已存在列错误
-    }
-    try {
-      await env.DB.prepare(
-        'ALTER TABLE user_situational_memories ADD COLUMN updated_at INTEGER',
-      ).run();
-    } catch (_err) {
-      // 兼容已存在列错误
-    }
-    try {
-      await env.DB.prepare(
-        'ALTER TABLE user_situational_memories ADD COLUMN last_updated INTEGER',
-      ).run();
-    } catch (_err) {
-      // 兼容已存在列错误
-    }
-
-    memoryTableReady = true;
-  } catch (err) {
-    console.warn('[MemoryStore] 校验情景记忆表结构跳过:', err);
-  }
+async function ensureMemoryTable(_env: Env): Promise<void> {
+  // 数据库表结构统一由 migrations/0001_init_schema.sql 维护，彻底避免冷启动 DDL 锁冲突
 }
 
 function parseMemoryRow(row: any): SituationalMemory | null {

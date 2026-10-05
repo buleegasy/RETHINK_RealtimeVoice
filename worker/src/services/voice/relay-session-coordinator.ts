@@ -159,36 +159,70 @@ export class RelaySessionCoordinator {
     currentMemory: any;
   }): void {
     const { serverWs, upstreamWs, coordinator, currentMemory } = params;
+    const earlyMessageQueue: any[] = [];
+    const MAX_EARLY_QUEUE_SIZE = 100;
+
+    const processAndSend = (eventData: any) => {
+      let raw = '';
+      if (typeof eventData === 'string') {
+        raw = eventData;
+      } else if (eventData instanceof ArrayBuffer || ArrayBuffer.isView(eventData)) {
+        try {
+          raw = new TextDecoder().decode(eventData);
+        } catch {
+          raw = '';
+        }
+      } else {
+        raw = String(eventData);
+      }
+
+      let payload: any = null;
+      try {
+        payload = JSON.parse(raw);
+      } catch {}
+
+      if (payload?.type === 'response.cancel') {
+        coordinator.interrupt();
+      }
+
+      if (payload?.type === 'session.update' && payload.session) {
+        const cleanSession = RealtimeGatewayAdapter.normalizeSessionUpdatePayload(
+          payload.session,
+          currentMemory,
+        );
+        upstreamWs.send(
+          JSON.stringify({
+            type: 'session.update',
+            session: cleanSession,
+          }),
+        );
+      } else if (payload?.type === 'response.create') {
+        upstreamWs.send(JSON.stringify(payload));
+      } else {
+        upstreamWs.send(eventData);
+      }
+    };
+
+    upstreamWs.addEventListener('open', () => {
+      while (earlyMessageQueue.length > 0) {
+        const item = earlyMessageQueue.shift();
+        if (item) {
+          try {
+            processAndSend(item);
+          } catch {}
+        }
+      }
+    });
 
     serverWs.addEventListener('message', (event) => {
       try {
-        if (upstreamWs.readyState !== WebSocket.OPEN) return;
-        const raw = typeof event.data === 'string' ? event.data : event.data.toString();
-        let payload: any = null;
-        try {
-          payload = JSON.parse(raw);
-        } catch {}
-
-        if (payload?.type === 'response.cancel') {
-          coordinator.interrupt();
+        if (upstreamWs.readyState !== WebSocket.OPEN) {
+          if (earlyMessageQueue.length < MAX_EARLY_QUEUE_SIZE) {
+            earlyMessageQueue.push(event.data);
+          }
+          return;
         }
-
-        if (payload?.type === 'session.update' && payload.session) {
-          const cleanSession = RealtimeGatewayAdapter.normalizeSessionUpdatePayload(
-            payload.session,
-            currentMemory,
-          );
-          upstreamWs.send(
-            JSON.stringify({
-              type: 'session.update',
-              session: cleanSession,
-            }),
-          );
-        } else if (payload?.type === 'response.create') {
-          upstreamWs.send(JSON.stringify(payload));
-        } else {
-          upstreamWs.send(event.data);
-        }
+        processAndSend(event.data);
       } catch {}
     });
   }

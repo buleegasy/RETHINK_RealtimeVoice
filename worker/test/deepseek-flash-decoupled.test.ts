@@ -307,7 +307,22 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
         lastUpdated: Date.now(),
       });
 
-      const res = await app.request('/api/voice/memory/student_stored_999');
+      // 1. 无凭证匿名请求严格返回 401 (Fail-Closed)
+      const unauthRes = await app.request('/api/voice/memory/student_stored_999');
+      expect(unauthRes.status).toBe(401);
+
+      // 2. 携带本人合法 Token 正常读取 200
+      const { signAuthToken, resolveJwtSecret } = await import('../src/lib/auth-crypto');
+      const secret = resolveJwtSecret({});
+      const now = Math.floor(Date.now() / 1000);
+      const studentToken = await signAuthToken(
+        { uid: 'student_stored_999', username: '阿杰', role: 'user', iat: now, exp: now + 3600 },
+        secret,
+      );
+
+      const res = await app.request('/api/voice/memory/student_stored_999', {
+        headers: { Authorization: `Bearer ${studentToken}` },
+      });
       expect(res.status).toBe(200);
       const body = (await res.json()) as any;
       expect(body.ok).toBe(true);

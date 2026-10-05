@@ -72,6 +72,15 @@ voiceRouter.get('/ws', async (c) => {
 
 // 2. 文本与降级 REST 语音对话端点
 voiceRouter.post('/chat', async (c) => {
+  const user = await extractAndVerifyUser(c);
+  const isProduction = c.env?.ENVIRONMENT === 'production';
+  if (isProduction && !user) {
+    return c.json(
+      { ok: false, error: 'Unauthorized: Missing or invalid authentication token' },
+      401,
+    );
+  }
+
   let body: any = {};
   try {
     body = await c.req.json();
@@ -114,22 +123,19 @@ voiceRouter.post('/session/persist', async (c) => {
   return c.json(result);
 });
 
-// 4. 来访学生情景记忆档案查询端点 (带 PII 权限守门)
+// 4. 来访学生情景记忆档案查询端点 (带 PII 权限守门，Fail-Closed 严禁匿名访问)
 voiceRouter.get('/memory/:userId', async (c) => {
   const userId = c.req.param('userId');
   const user = await extractAndVerifyUser(c);
-  const isProduction = c.env?.ENVIRONMENT === 'production';
 
-  if (isProduction && !user) {
+  if (!user) {
     return c.json({ ok: false, error: 'Unauthorized: 请先登录获取凭证' }, 401);
   }
 
-  if (user) {
-    const isPrivileged = user.role === 'teacher' || user.role === 'admin';
-    const isOwner = user.uid === userId || user.username === userId;
-    if (!isPrivileged && !isOwner) {
-      return c.json({ ok: false, error: 'Forbidden: 无权查看其他来访者的情景记忆档案' }, 403);
-    }
+  const isPrivileged = user.role === 'teacher' || user.role === 'admin';
+  const isOwner = user.uid === userId || user.username === userId;
+  if (!isPrivileged && !isOwner) {
+    return c.json({ ok: false, error: 'Forbidden: 无权查看其他来访者的情景记忆档案' }, 403);
   }
 
   const memory = await VoiceService.getMemory(c.env || {}, userId);
@@ -142,6 +148,15 @@ voiceRouter.get('/memory/:userId', async (c) => {
 
 // 5. 心理支持与干预策略知识向量检索端点
 voiceRouter.post('/knowledge', async (c) => {
+  const user = await extractAndVerifyUser(c);
+  const isProduction = c.env?.ENVIRONMENT === 'production';
+  if (isProduction && !user) {
+    return c.json(
+      { ok: false, error: 'Unauthorized: Missing or invalid authentication token' },
+      401,
+    );
+  }
+
   let body: Partial<KnowledgeQueryPayload> = {};
   try {
     body = await c.req.json<KnowledgeQueryPayload>();
