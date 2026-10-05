@@ -38,7 +38,7 @@ jobs:
         run: npm run build
 
       - name: SonarCloud Code Analysis
-        uses: SonarSource/sonarcloud-github-action@cb25299f0332e16660e5027423042266a3d0b806 # v3.1.0
+        uses: SonarSource/sonarcloud-github-action@ba3875ecf642b2129de2b589510c81a8b53dbf4e
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
