@@ -140,7 +140,9 @@ export class RealtimeGatewayAdapter {
       },
     };
 
-    cleanSession.max_output_tokens = 100;
+    if (incoming.max_output_tokens !== undefined) {
+      cleanSession.max_output_tokens = incoming.max_output_tokens;
+    }
 
     if (incoming.tools !== undefined) cleanSession.tools = incoming.tools;
     if (incoming.tool_choice !== undefined) cleanSession.tool_choice = incoming.tool_choice;

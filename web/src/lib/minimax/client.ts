@@ -195,7 +195,6 @@ export class MiniMaxRealtimeClient {
       response: {
         modalities: ['audio', 'text'],
         instructions: `你必须严格只字面说：“${greeting}”，绝对禁止添加任何多余的开场白、问候语或解释！`,
-        max_output_tokens: 30,
       },
     });
   }

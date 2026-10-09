@@ -94,7 +94,7 @@ export class RelaySessionCoordinator {
         env.OPENROUTER_BASE_URL ||
         (config.upstreamKey ? config.upstreamBaseUrl : undefined) ||
         'https://api.apiyi.com/v1';
-      const openRouterModel = env.OPENROUTER_MODEL || atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx');
+      const openRouterModel = env.OPENROUTER_MODEL || atob('Z29vZ2xlL2dlbWluaS0yLjUtZmxhc2g=');
 
       const shadowPipeline = new ShadowReasoningPipeline(env, {
         upstreamKey: config.upstreamKey,
@@ -508,7 +508,6 @@ export class RelaySessionCoordinator {
           type: 'response.create',
           response: {
             instructions: `【影子大脑认知指导】：${cognitiveHint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语回应，语速稍快轻快利落，严格控制在 1-2 句话内（40字以内），严禁任何英文。`,
-            max_output_tokens: 60,
           },
         }),
       );

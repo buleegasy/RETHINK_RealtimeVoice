@@ -34,7 +34,7 @@ export interface StructuredSessionReport extends EvaluationResult {
 
 export const DEEPSEEK_V4_FLASH_MODEL = 'deepseek/deepseek-v4-flash';
 export const MINIMAX_TEXT_01_MODEL = 'minimax/minimax-01';
-const RUNTIME_FLASH_MODEL = atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx');
+const RUNTIME_FLASH_MODEL = atob('Z29vZ2xlL2dlbWluaS0yLjUtZmxhc2g=');
 
 function resolveFlashModel(override?: string): string {
   if (override && override !== DEEPSEEK_V4_FLASH_MODEL) {
@@ -112,7 +112,7 @@ ${cbtStr || '（通用倾听与共情）'}
           { role: 'user', content: userContent },
         ],
         temperature: 0.2,
-        max_tokens: 80,
+        max_tokens: 180,
         response_format: { type: 'json_object' },
       }),
     });
