@@ -86,8 +86,9 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
   it('TestWorkbench 初始空状态下应准确渲染 HUD 指标与品牌伪装标识', () => {
     render(<TestWorkbench />);
 
-    // 严禁静态外露非 MiniMax/DeepSeek 外部厂商名，必须呈现为 DeepSeek V4 Flash
-    expect(screen.getByText('DEEPSEEK V4 FLASH SHADOW')).toBeInTheDocument();
+    // 必须呈现为 Live-1 Direct 极速架构与 DeepSeek V4 Flash 深度评估标识
+    expect(screen.getByText('LIVE-1 DIRECT · CBT EMBEDDED')).toBeInTheDocument();
+    expect(screen.getByText('DEEPSEEK V4 FLASH EVAL')).toBeInTheDocument();
     expect(screen.getByText('RETHINK TELEMETRY')).toBeInTheDocument();
     expect(screen.getByText('网关往返时延 (RTT)')).toBeInTheDocument();
     expect(screen.getByText('首帧响应时延 (TTFT)')).toBeInTheDocument();
@@ -144,5 +145,20 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
     const endCallBtn = screen.getByText('挂机');
     fireEvent.click(endCallBtn);
     expect(mockEndCall).toHaveBeenCalled();
+  });
+
+  it('TestWorkbench 应支持查看 16 组预载 CBT 认知应对胶囊与情景记忆', () => {
+    render(<TestWorkbench />);
+
+    const capsulesTab = screen.getByText('16组CBT策略库');
+    fireEvent.click(capsulesTab);
+    expect(screen.getByText('过度通气与喘不上气的箱式呼吸缓解法')).toBeInTheDocument();
+    expect(screen.getByText('月考与模考失利的去灾难化认知重构')).toBeInTheDocument();
+    expect(screen.getByText('全部策略 (16)')).toBeInTheDocument();
+
+    const profileTab = screen.getByText('情景档案与建档');
+    fireEvent.click(profileTab);
+    expect(screen.getByText(/林同学 \(高中二年级\)/)).toBeInTheDocument();
+    expect(screen.getByText(/挂机后异步深度评估引擎/)).toBeInTheDocument();
   });
 });

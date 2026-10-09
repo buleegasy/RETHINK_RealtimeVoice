@@ -157,11 +157,14 @@ export const AudioDiagnosticsPanel: React.FC = () => {
           <pre className="whitespace-pre-wrap break-all">
             {JSON.stringify(
               {
+                architecture: 'Live-1 Direct + 16 CBT Capsules (TTFT < 500ms)',
                 engine: 'DeepSeek V4 Flash',
+                postSessionEvaluator: 'DeepSeek V4 Flash',
                 gatewayRttMs: rttMs,
                 avgRttMs,
                 ttftMs,
                 lastShadowDurationMs,
+                cbtCapsulesPreloaded: 16,
                 jitterWatermarkMs: jitter.bufferedMs,
                 jitterBuffering: jitter.isBuffering,
                 totalAudioChunks,

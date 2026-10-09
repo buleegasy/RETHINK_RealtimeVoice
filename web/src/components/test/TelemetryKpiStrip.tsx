@@ -71,28 +71,34 @@ export const TelemetryKpiStrip: React.FC = () => {
           </span>
           <span className="text-xs text-slate-400 font-mono">ms</span>
           <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300">
-            静音→首包
+            直通流式
           </span>
         </div>
-        <div className="mt-1.5 text-[10px] font-mono text-slate-500">标称目标: &lt; 800ms</div>
+        <div className="mt-1.5 text-[10px] font-mono text-slate-500">
+          标称目标: &lt; 500ms (极速)
+        </div>
       </div>
 
-      {/* 3. 影子大脑推理耗时 */}
+      {/* 3. CBT 策略装载与直通延迟 */}
       <div className="bg-slate-900/60 border border-slate-800 rounded p-2.5 flex flex-col justify-between">
         <div className="flex items-center justify-between text-[11px] text-slate-400">
-          <span>影子大脑推理耗时</span>
+          <span>CBT 策略装载 / 旁路延迟</span>
           <Cpu className="w-3 h-3 text-indigo-400" />
         </div>
         <div className="mt-1 flex items-baseline gap-2">
           <span className="text-xl font-bold font-mono text-indigo-300">
-            {lastShadowDurationMs > 0 ? `${lastShadowDurationMs}` : '--'}
+            {lastShadowDurationMs > 0 ? `${lastShadowDurationMs}` : '16'}
           </span>
-          <span className="text-xs text-slate-400 font-mono">ms</span>
+          <span className="text-xs text-slate-400 font-mono">
+            {lastShadowDurationMs > 0 ? 'ms' : '组'}
+          </span>
           <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded border border-indigo-500/30 bg-indigo-500/10 text-indigo-300">
-            DeepSeek V4
+            {lastShadowDurationMs > 0 ? '动态指导' : '直通预载'}
           </span>
         </div>
-        <div className="mt-1.5 text-[10px] font-mono text-slate-500">熔断降级阈值: 800ms</div>
+        <div className="mt-1.5 text-[10px] font-mono text-slate-500">
+          {lastShadowDurationMs > 0 ? '旁路动态指令注入' : '16组胶囊预载 · 0ms额外延迟'}
+        </div>
       </div>
 
       {/* 4. 音频抖动缓冲水位 */}

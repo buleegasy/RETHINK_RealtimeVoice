@@ -66,8 +66,14 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
             <span className="font-bold text-sm tracking-wider bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
               RETHINK TELEMETRY
             </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-              DEEPSEEK V4 FLASH SHADOW
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              LIVE-1 DIRECT · CBT EMBEDDED
+            </span>
+            <span
+              className="hidden lg:inline text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+              title="挂机后由 DeepSeek V4 Flash 异步进行结构化建档与评估"
+            >
+              DEEPSEEK V4 FLASH EVAL
             </span>
           </div>
         </div>
@@ -114,7 +120,7 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
             {duplexPhase === 'speaking'
               ? 'AI 播报中'
               : duplexPhase === 'thinking'
-                ? '影子大脑推理'
+                ? '模型流式生成'
                 : duplexPhase === 'listening'
                   ? '监听倾听中'
                   : '待机'}
