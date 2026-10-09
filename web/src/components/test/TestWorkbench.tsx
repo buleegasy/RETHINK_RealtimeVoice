@@ -3,7 +3,6 @@ import { useVoiceSession } from '../../hooks/useVoiceSession';
 import { useBoothStore } from '../../store/boothStore';
 import { TelemetryHeader } from './TelemetryHeader';
 import { TelemetryKpiStrip } from './TelemetryKpiStrip';
-import { ShadowDirectivePanel } from './ShadowDirectivePanel';
 import { LiveTranscriptPanel } from './LiveTranscriptPanel';
 import { AudioDiagnosticsPanel } from './AudioDiagnosticsPanel';
 
@@ -45,9 +44,8 @@ export const TestWorkbench: React.FC = () => {
 
       {/* 主体工作区 (两栏分布) */}
       <div className="flex-1 min-h-0 p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden">
-        {/* 左侧/中部：影子大脑提示词注入 + 转写双轨实时流 (7 cols) */}
-        <div className="lg:col-span-7 flex flex-col gap-4 min-h-0 h-full">
-          <ShadowDirectivePanel />
+        {/* 左侧：语音转写双轨实时流 (7 cols) */}
+        <div className="lg:col-span-7 flex flex-col min-h-0 h-full">
           <LiveTranscriptPanel />
         </div>
 

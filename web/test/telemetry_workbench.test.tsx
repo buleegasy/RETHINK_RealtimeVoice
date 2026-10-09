@@ -96,7 +96,7 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
     expect(screen.getByText('启动通话')).toBeInTheDocument();
   });
 
-  it('TestWorkbench 在通话进行与收到影子大脑指令时应实时呈现指导意见', () => {
+  it('TestWorkbench 在通话进行与收到语音转写时应实时呈现对话流', () => {
     useBoothStore.setState({
       sessionStatus: 'connected',
       callDuration: 35,
@@ -106,12 +106,14 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
     useTelemetryStore.getState().setDuplexPhase('speaking');
     useTelemetryStore.getState().updateRtt(42);
     useTelemetryStore.getState().updateTtft(450);
-    useTelemetryStore.getState().addShadowDirective({
-      turnSequence: 2,
-      userText: '大家都比我聪明，我怎么努力都没用。',
-      cognitiveHint: '识别到全或无与过分概括，请使用苏格拉底式提问引导。',
-      durationMs: 310,
-      fallback: false,
+    useTelemetryStore.getState().appendFinalTranscript({
+      role: 'user',
+      text: '大家都比我聪明，我怎么努力都没用。',
+      timestamp: Date.now(),
+    });
+    useTelemetryStore.getState().appendFinalTranscript({
+      role: 'assistant',
+      text: '听得出来你现在特别受挫，觉得自己被落下了对吗？',
       timestamp: Date.now(),
     });
 
@@ -119,8 +121,8 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
 
     expect(screen.getByText('42')).toBeInTheDocument();
     expect(screen.getByText('450')).toBeInTheDocument();
-    expect(screen.getAllByText(/大家都比我聪明/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/识别到全或无与过分概括/).length).toBeGreaterThan(0);
+    expect(screen.getByText('大家都比我聪明，我怎么努力都没用。')).toBeInTheDocument();
+    expect(screen.getByText('听得出来你现在特别受挫，觉得自己被落下了对吗？')).toBeInTheDocument();
     expect(screen.getByText('挂机')).toBeInTheDocument();
   });
 
@@ -145,20 +147,5 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
     const endCallBtn = screen.getByText('挂机');
     fireEvent.click(endCallBtn);
     expect(mockEndCall).toHaveBeenCalled();
-  });
-
-  it('TestWorkbench 应支持查看 16 组预载 CBT 认知应对胶囊与情景记忆', () => {
-    render(<TestWorkbench />);
-
-    const capsulesTab = screen.getByText('16组CBT策略库');
-    fireEvent.click(capsulesTab);
-    expect(screen.getByText('过度通气与喘不上气的箱式呼吸缓解法')).toBeInTheDocument();
-    expect(screen.getByText('月考与模考失利的去灾难化认知重构')).toBeInTheDocument();
-    expect(screen.getByText('全部策略 (16)')).toBeInTheDocument();
-
-    const profileTab = screen.getByText('情景档案与建档');
-    fireEvent.click(profileTab);
-    expect(screen.getByText(/林同学 \(高中二年级\)/)).toBeInTheDocument();
-    expect(screen.getByText(/挂机后异步深度评估引擎/)).toBeInTheDocument();
   });
 });
