@@ -178,7 +178,7 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition cursor-pointer shadow-lg shadow-rose-900/30 active:scale-95"
           >
             <PhoneOff className="w-3.5 h-3.5" />
-            <span>挂机</span>
+            <span>{sessionStatus === 'connecting' ? '取消连接' : '挂机'}</span>
           </button>
         )}
       </div>

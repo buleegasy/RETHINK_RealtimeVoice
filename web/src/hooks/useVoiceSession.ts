@@ -1,12 +1,14 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { useBoothStore } from '../store/boothStore';
 import { useAuthStore } from '../store/authStore';
+import { useModeStore } from '../store/modeStore';
 import { useTelemetryStore } from '../store/telemetryStore';
 import { MiniMaxRealtimeClient } from '../lib/minimax/client';
 import { RealtimeToolDispatcher } from '../lib/tools/toolDispatcher';
 import { DefaultRagProvider } from '../lib/pipelines/rag/defaultRagProvider';
 import { BufferedTranscriptionPipeline } from '../lib/pipelines/transcription/bufferedTranscription';
 import { safeRandomId } from '../lib/utils';
+import { apiFetch } from '../lib/api';
 import { useVoiceAudio } from './useVoiceAudio';
 import { useSessionPersistence } from './useSessionPersistence';
 
@@ -69,6 +71,27 @@ export function useVoiceSession() {
     transcriptionRef.current.reset();
 
     try {
+      let currentToken = useAuthStore.getState().token;
+      let currentUser = useAuthStore.getState().user;
+      if (!currentToken) {
+        try {
+          const deviceId =
+            useModeStore.getState().runMode === 'test' ? 'telemetry-test-bench' : 'kiosk-booth-01';
+          const res = await apiFetch('/api/auth/kiosk-login', {
+            method: 'POST',
+            body: JSON.stringify({ deviceId }),
+          });
+          const data = await res.json();
+          if (data.success && data.user && data.token) {
+            useAuthStore.getState().login(data.user, data.token);
+            currentToken = data.token;
+            currentUser = data.user;
+          }
+        } catch (authErr) {
+          console.warn('[VoiceSession] 自动获取访客 Token 失败:', authErr);
+        }
+      }
+
       const audioGraph = getAudioGraph();
       audioGraph.setOnPlaybackStateChange((isPlaying) => {
         if (isPlaying) {
@@ -127,9 +150,10 @@ export function useVoiceSession() {
 
       clientRef.current = new MiniMaxRealtimeClient({
         sessionId: sessionIdRef.current,
-        userId: user?.uid || user?.userName,
-        username: user?.displayName || user?.userName,
-        token: useAuthStore.getState().token || undefined,
+        userId: currentUser?.uid || currentUser?.userName || user?.uid || user?.userName,
+        username:
+          currentUser?.displayName || currentUser?.userName || user?.displayName || user?.userName,
+        token: currentToken || undefined,
         callbacks: {
           onOpen: () => {
             setSessionStatus('connected');
@@ -147,11 +171,18 @@ export function useVoiceSession() {
               setErrorMessage('语音服务器连接失败，请检查网络或稍后重试');
               setSessionStatus('error');
               setHookState('on_hook');
+              if (clientRef.current) {
+                clientRef.current.disconnect();
+                clientRef.current = null;
+              }
               cleanupAudio();
             }
           },
           onError: (err: any) => {
             console.warn('[VoiceSession] 中继网络通知:', err);
+            if (useBoothStore.getState().sessionStatus === 'connecting') {
+              setErrorMessage('语音中继链路异常，请确认网络环境或刷新重试');
+            }
           },
           onAudioDelta: (chunk) => {
             audioGraph.enqueueAudioChunk(chunk);
@@ -322,9 +353,24 @@ export function useVoiceSession() {
       }, 100);
     } catch (err: any) {
       console.error('[VoiceSession] 启动失败:', err);
-      setErrorMessage(err?.message || '麦克风设备授权或初始化失败');
+      let friendlyMsg = '麦克风设备授权或初始化失败';
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+        friendlyMsg = '麦克风权限已被拒绝，请在浏览器地址栏中允许使用麦克风后重试';
+      } else if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
+        friendlyMsg = '未检测到可用的麦克风输入设备，请连接麦克风后重试';
+      } else if (typeof window !== 'undefined' && !window.isSecureContext) {
+        friendlyMsg = '浏览器安全限制：语音通话需要 HTTPS 安全环境支持';
+      } else if (err?.message) {
+        friendlyMsg = `启动失败: ${err.message}`;
+      }
+      setErrorMessage(friendlyMsg);
       setSessionStatus('error');
       setHookState('on_hook');
+      if (clientRef.current) {
+        clientRef.current.disconnect();
+        clientRef.current = null;
+      }
+      cleanupAudio();
     }
   }, [
     getAudioGraph,

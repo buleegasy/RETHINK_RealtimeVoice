@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut } from 'lucide-react';
+import { LogOut, AlertCircle } from 'lucide-react';
 import { VoiceOrb } from './VoiceOrb';
 import { CrisisOverlay } from '../common/CrisisOverlay';
 import { useAuthStore } from '../../store/authStore';
@@ -22,6 +22,8 @@ export const VoiceView: React.FC<VoiceViewProps> = ({ onStartCall, onEndCall }) 
   const audioLevel = useBoothStore((s) => s.audioLevel);
   const callDuration = useBoothStore((s) => s.callDuration);
   const cbtStage = useBoothStore((s) => s.cbtStage);
+  const errorMessage = useBoothStore((s) => s.errorMessage);
+  const setErrorMessage = useBoothStore((s) => s.setErrorMessage);
 
   const handleLogout = () => {
     if (runMode === 'kiosk') {
@@ -79,6 +81,22 @@ export const VoiceView: React.FC<VoiceViewProps> = ({ onStartCall, onEndCall }) 
       </header>
 
       <main className="flex-1 min-h-0 flex flex-col items-center justify-center p-3 sm:p-6 overflow-visible">
+        {errorMessage && (
+          <div className="mb-6 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center justify-between gap-3 max-w-md shadow-sm">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-red-400 hover:text-red-700 font-bold px-1 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         <VoiceOrb
           status={sessionStatus}
           duplexPhase={duplexPhase}
@@ -86,12 +104,22 @@ export const VoiceView: React.FC<VoiceViewProps> = ({ onStartCall, onEndCall }) 
           fsmState={cbtStage}
           onClick={isActive ? onEndCall : onStartCall}
         />
-        {isActive && duplexPhase === 'listening' && (
+        {sessionStatus === 'connecting' && (
+          <p className="mt-4 sm:mt-8 text-xs font-mono text-black/50 tracking-wider animate-pulse text-center">
+            正在建立语音专线连接...
+          </p>
+        )}
+        {sessionStatus === 'connected' && duplexPhase === 'listening' && (
           <p className="mt-4 sm:mt-8 text-xs font-mono text-black/40 tracking-wider text-center">
             请随时开口说话，我在听...
           </p>
         )}
-        {isActive && duplexPhase === 'thinking' && (
+        {sessionStatus === 'connected' && duplexPhase === 'speaking' && (
+          <p className="mt-4 sm:mt-8 text-xs font-mono text-black/40 tracking-wider text-center">
+            倾听中（可直接开口打断）...
+          </p>
+        )}
+        {sessionStatus === 'connected' && duplexPhase === 'thinking' && (
           <p className="mt-4 sm:mt-8 text-xs font-mono text-black/40 tracking-wider animate-pulse text-center">
             正在思考中...
           </p>
@@ -114,7 +142,7 @@ export const VoiceView: React.FC<VoiceViewProps> = ({ onStartCall, onEndCall }) 
             className="px-8 py-3.5 rounded-full bg-neutral-900 text-white text-sm font-medium tracking-wider hover:bg-black active:scale-95 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
           >
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span>结束通话</span>
+            <span>{sessionStatus === 'connecting' ? '取消连接' : '结束通话'}</span>
             <span className="font-mono text-xs opacity-75">{formatDuration(callDuration)}</span>
           </button>
         )}

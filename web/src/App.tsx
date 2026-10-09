@@ -70,9 +70,12 @@ export function App() {
         .then((data) => {
           if (data.success && data.user && data.token) {
             login(data.user, data.token);
+          } else {
+            hasAutoLoggedInRef.current = false;
           }
         })
         .catch((err) => {
+          hasAutoLoggedInRef.current = false;
           console.warn('[App] 自动免密鉴权异常:', err);
         });
     }

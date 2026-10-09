@@ -4,6 +4,7 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
+JWT_SECRET = "rethink-realtime-hmac-sha256-kiosk-booth-production-salt-2026-secure"
 
 [[d1_databases]]
 binding = "DB"

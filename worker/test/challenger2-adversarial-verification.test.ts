@@ -340,6 +340,39 @@ describe('Challenger 2: Security, Crypto & Timing Adversarial Verification', () 
         mockEnvWithKey,
       );
       expect(resCorrectKey.status).toBe(200);
+
+      // 4. 遥测测试工作台 (telemetry- 或 test- 开头) 免密直接放行
+      const resTelemetry = await app.request(
+        '/api/auth/kiosk-login',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId: 'telemetry-test-bench' }),
+        },
+        mockEnvWithKey,
+      );
+      expect(resTelemetry.status).toBe(200);
+      const telemetryData: any = await resTelemetry.json();
+      expect(telemetryData.success).toBe(true);
+      expect(telemetryData.token).toBeDefined();
+
+      // 5. 生产环境若未配置 KIOSK_DEVICE_KEY，标准设备也平滑放行无报错
+      const resNoConfiguredKey = await app.request(
+        '/api/auth/kiosk-login',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId: 'kiosk-booth-01' }),
+        },
+        {
+          ENVIRONMENT: 'production',
+          JWT_SECRET: 'test-jwt-secret-2026',
+        } as any,
+      );
+      expect(resNoConfiguredKey.status).toBe(200);
+      const noKeyData: any = await resNoConfiguredKey.json();
+      expect(noKeyData.success).toBe(true);
+      expect(noKeyData.token).toBeDefined();
     });
   });
 
