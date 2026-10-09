@@ -515,6 +515,7 @@ export class RelaySessionCoordinator {
             JSON.stringify({
               type: 'session.update',
               session: {
+                type: 'realtime',
                 instructions: `【影子大脑认知指导】：${hint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语交流，并在后续对话中自然贯彻此认知引导。`,
               },
             }),
