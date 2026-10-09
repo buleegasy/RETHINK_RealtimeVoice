@@ -16,11 +16,15 @@ export const CBT_VOICE_TOOLS = [
   {
     type: 'function',
     name: 'search_knowledge_base',
-    description: '当同学表达具体的心理困扰、焦虑惊恐症状或特定认知扭曲，需要确切的 CBT 干预技术或应对方案时调用。获取到参考后，必须用温暖自然的 1-2 句口语向同学转达，严禁生硬背诵文档。不要对日常寒暄或简单情绪倾诉触发此工具。',
+    description:
+      '当同学表达具体的心理困扰、焦虑惊恐症状或特定认知扭曲，需要确切的 CBT 干预技术或应对方案时调用。获取到参考后，必须用温暖自然的 1-2 句口语向同学转达，严禁生硬背诵文档。不要对日常寒暄或简单情绪倾诉触发此工具。',
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '用于检索知识库的搜索查询语句，应提取用户核心困扰关键词' },
+        query: {
+          type: 'string',
+          description: '用于检索知识库的搜索查询语句，应提取用户核心困扰关键词',
+        },
       },
       required: ['query'],
     },
@@ -28,7 +32,8 @@ export const CBT_VOICE_TOOLS = [
   {
     type: 'function',
     name: 'report_state',
-    description: '当对话进入新的 CBT 阶段时调用。阶段包括：Active_Listening（积极倾听）、CBT_Stripping（ABC 事实剥离）、Socratic_Questioning（苏格拉底式提问与认知重构）。每次你判断对话应该推进到下一个阶段时，调用此工具汇报。',
+    description:
+      '当对话进入新的 CBT 阶段时调用。阶段包括：Active_Listening（积极倾听）、CBT_Stripping（ABC 事实剥离）、Socratic_Questioning（苏格拉底式提问与认知重构）。每次你判断对话应该推进到下一个阶段时，调用此工具汇报。',
     parameters: {
       type: 'object',
       properties: {
@@ -44,7 +49,8 @@ export const CBT_VOICE_TOOLS = [
   {
     type: 'function',
     name: 'escalate_crisis',
-    description: '当用户表达出自杀意念、自伤行为、或任何危及生命安全的内容时，立即调用此工具。这将触发前端的紧急干预界面。',
+    description:
+      '当用户表达出自杀意念、自伤行为、或任何危及生命安全的内容时，立即调用此工具。这将触发前端的紧急干预界面。',
     parameters: {
       type: 'object',
       properties: {
@@ -68,7 +74,7 @@ export const CBT_VOICE_TOOLS = [
   },
 ];
 
-export const OPENING_GREETING = '你好，欢迎来到Rethink，目前Rethink处于测试阶段，您的通话记录将被加密保存以便提升产品体验。如在使用过程中遇到问题，可以直接告诉我。今天有什么想聊的吗？';
+export const OPENING_GREETING = '你好，欢迎来到Rethink，今天有什么想聊的吗？';
 
 export const DEFAULT_VOICE_INSTRUCTIONS = `你是部署在高中校园里的 RETHINK 心理陪伴智能体，使用 maple 音色，以同校同级死党语气提供陪伴与心理支持。
 你必须全程使用中文进行交流，严禁输出任何英文内容或问候（绝对禁止说“Hi there”等英文单词）。
@@ -80,7 +86,7 @@ export const DEFAULT_VOICE_INSTRUCTIONS = `你是部署在高中校园里的 RET
 
 【开场强制首句】
 每次对话开始时，你必须主动且字面一字不差地说出：
-“你好，欢迎来到Rethink，目前Rethink处于测试阶段，您的通话记录将被加密保存以便提升产品体验。如在使用过程中遇到问题，可以直接告诉我。今天有什么想聊的吗？”
+“你好，欢迎来到Rethink，今天有什么想聊的吗？”
 说完开场白后等待对方回应。
 
 【核心交流准则】
