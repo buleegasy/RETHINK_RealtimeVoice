@@ -36,28 +36,28 @@ export class RelaySessionCoordinator {
           '未检测到 Realtime 实时网关访问凭证，请先配置环境变量 REALTIME_UPSTREAM_KEY',
         ),
       );
-      RealtimeGatewayAdapter.safeClose(
-        serverWs,
-        4401,
-        'Unauthorized: Missing Realtime upstream key',
-      );
+      RealtimeGatewayAdapter.safeClose(serverWs, 4401, 'Unauthorized: Missing upstream key');
       return new Response(null, { status: 101, webSocket: clientWs });
     }
 
     try {
+      const isDirectLive = RealtimeGatewayAdapter.isDirectLiveEndpoint(config.upstreamBaseUrl);
       const wsEndpoint = RealtimeGatewayAdapter.buildUpstreamWsUrl(
         config.upstreamBaseUrl,
         config.upstreamModel,
       );
-      const authSubprotocol = `${atob('b3BlbmFp')}-insecure-api-key.${config.upstreamKey}`;
-      const upstreamRes = await fetch(wsEndpoint, {
-        headers: {
-          Upgrade: 'websocket',
-          Authorization: `Bearer ${config.upstreamKey}`,
-          'Sec-WebSocket-Protocol': `realtime, ${authSubprotocol}`,
-        },
-      });
 
+      const headers: Record<string, string> = {
+        Upgrade: 'websocket',
+        Authorization: `Bearer ${config.upstreamKey}`,
+        'api-key': config.upstreamKey,
+      };
+      if (!isDirectLive) {
+        const authSubprotocol = `${atob('b3BlbmFp')}-insecure-api-key.${config.upstreamKey}`;
+        headers['Sec-WebSocket-Protocol'] = `realtime, ${authSubprotocol}`;
+      }
+
+      const upstreamRes = await fetch(wsEndpoint, { headers });
       const upstreamWs = upstreamRes.webSocket;
       if (!upstreamWs) {
         serverWs.send(
@@ -85,7 +85,7 @@ export class RelaySessionCoordinator {
         ctx,
       );
 
-      let currentMemory = await getSituationalMemory(env, requestedUserId);
+      const currentMemory = await getSituationalMemory(env, requestedUserId);
       let studentName = currentMemory?.userName || '';
       const dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
@@ -103,15 +103,30 @@ export class RelaySessionCoordinator {
         openRouterModel,
       });
 
-      // 绑定客户端事件
-      this.bindClientEvents({
+      let isSessionReady = !isDirectLive;
+      let activeDelegationId: string | null = null;
+
+      // 绑定客户端事件通道
+      const { flushEarlyQueue } = this.bindClientEvents({
         serverWs,
         upstreamWs,
         coordinator,
         currentMemory,
+        isDirectLive,
+        isSessionReady: () => isSessionReady,
       });
 
-      // 绑定上游网关事件
+      // 云端直连架构初始化发送 session.start 启动帧
+      if (isDirectLive) {
+        const startPayload = RealtimeGatewayAdapter.buildSessionStartPayload(
+          {},
+          currentMemory,
+          config.upstreamModel,
+        );
+        upstreamWs.send(JSON.stringify(startPayload));
+      }
+
+      // 绑定上游网关事件通道
       this.bindUpstreamEvents({
         serverWs,
         upstreamWs,
@@ -126,9 +141,18 @@ export class RelaySessionCoordinator {
           studentName = name;
         },
         getMemory: () => currentMemory,
+        isDirectLive,
+        onSessionReady: () => {
+          isSessionReady = true;
+          flushEarlyQueue();
+        },
+        getActiveDelegationId: () => activeDelegationId,
+        setActiveDelegationId: (id) => {
+          activeDelegationId = id;
+        },
       });
 
-      // 绑定断开与销毁事件
+      // 绑定断开与生命周期事件
       this.bindLifecycleEvents({
         serverWs,
         upstreamWs,
@@ -156,29 +180,16 @@ export class RelaySessionCoordinator {
     upstreamWs: WebSocket;
     coordinator: BargeInCoordinator;
     currentMemory: any;
-  }): void {
-    const { serverWs, upstreamWs, coordinator, currentMemory } = params;
+    isDirectLive: boolean;
+    isSessionReady: () => boolean;
+  }): { flushEarlyQueue: () => void } {
+    const { serverWs, upstreamWs, coordinator, currentMemory, isDirectLive, isSessionReady } =
+      params;
     const earlyMessageQueue: any[] = [];
     const MAX_EARLY_QUEUE_SIZE = 100;
 
     const processAndSend = (eventData: any) => {
-      let raw = '';
-      if (typeof eventData === 'string') {
-        raw = eventData;
-      } else if (eventData instanceof ArrayBuffer || ArrayBuffer.isView(eventData)) {
-        try {
-          raw = new TextDecoder().decode(eventData);
-        } catch {
-          raw = '';
-        }
-      } else {
-        raw = String(eventData);
-      }
-
-      let payload: any = null;
-      try {
-        payload = JSON.parse(raw);
-      } catch {}
+      const payload = this.parseJsonSafely(eventData);
 
       if (payload?.type === 'client.ping') {
         if (serverWs.readyState === WebSocket.OPEN) {
@@ -198,6 +209,9 @@ export class RelaySessionCoordinator {
       }
 
       if (payload?.type === 'session.update' && payload.session) {
+        if (isDirectLive) {
+          return;
+        }
         const cleanSession = RealtimeGatewayAdapter.normalizeSessionUpdatePayload(
           payload.session,
           currentMemory,
@@ -209,14 +223,30 @@ export class RelaySessionCoordinator {
             session: upstreamSession,
           }),
         );
-      } else if (payload?.type === 'response.create') {
-        upstreamWs.send(JSON.stringify(payload));
+        return;
+      }
+
+      if (payload?.type === 'response.create') {
+        if (!isDirectLive) {
+          upstreamWs.send(JSON.stringify(payload));
+        }
+        return;
+      }
+
+      const { transformed, shouldDrop } = RealtimeGatewayAdapter.transformClientEvent(
+        payload || eventData,
+        isDirectLive,
+      );
+      if (shouldDrop) return;
+
+      if (transformed && typeof transformed === 'object') {
+        upstreamWs.send(JSON.stringify(transformed));
       } else {
         upstreamWs.send(eventData);
       }
     };
 
-    upstreamWs.addEventListener('open', () => {
+    const flushEarlyQueue = () => {
       while (earlyMessageQueue.length > 0) {
         const item = earlyMessageQueue.shift();
         if (item) {
@@ -225,11 +255,17 @@ export class RelaySessionCoordinator {
           } catch {}
         }
       }
+    };
+
+    upstreamWs.addEventListener('open', () => {
+      if (isSessionReady()) {
+        flushEarlyQueue();
+      }
     });
 
     serverWs.addEventListener('message', (event) => {
       try {
-        if (upstreamWs.readyState !== WebSocket.OPEN) {
+        if (upstreamWs.readyState !== WebSocket.OPEN || !isSessionReady()) {
           if (earlyMessageQueue.length < MAX_EARLY_QUEUE_SIZE) {
             earlyMessageQueue.push(event.data);
           }
@@ -238,6 +274,18 @@ export class RelaySessionCoordinator {
         processAndSend(event.data);
       } catch {}
     });
+
+    return { flushEarlyQueue };
+  }
+
+  private static parseJsonSafely(data: any): any {
+    try {
+      if (typeof data === 'string') return JSON.parse(data);
+      if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+        return JSON.parse(new TextDecoder().decode(data));
+      }
+    } catch {}
+    return null;
   }
 
   private static bindUpstreamEvents(params: {
@@ -256,6 +304,10 @@ export class RelaySessionCoordinator {
     getStudentName: () => string;
     setStudentName: (name: string) => void;
     getMemory: () => any;
+    isDirectLive: boolean;
+    onSessionReady: () => void;
+    getActiveDelegationId: () => string | null;
+    setActiveDelegationId: (id: string | null) => void;
   }): void {
     const {
       serverWs,
@@ -269,81 +321,67 @@ export class RelaySessionCoordinator {
       getStudentName,
       setStudentName,
       getMemory,
+      isDirectLive,
+      onSessionReady,
+      getActiveDelegationId,
+      setActiveDelegationId,
     } = params;
 
     const processedItemIds = new Set<string>();
+
     upstreamWs.addEventListener('message', async (event) => {
       try {
-        let outgoingData = event.data;
         let payload: any = null;
-
         if (typeof event.data === 'string') {
           try {
             payload = JSON.parse(event.data);
           } catch {}
         } else if (event.data && typeof (event.data as any).text === 'function') {
           try {
-            const txt = await (event.data as any).text();
-            payload = JSON.parse(txt);
+            payload = JSON.parse(await (event.data as any).text());
           } catch {}
         }
 
-        // 统一模型呈现规范：拦截上游网关下发的所有帧，强制将底层模型标识覆写为 minimax-realtime
         if (payload && typeof payload === 'object') {
-          let needsReserialize = false;
-          if (payload.session && typeof payload.session === 'object' && payload.session.model) {
-            payload.session.model = 'minimax-realtime';
-            needsReserialize = true;
+          if (isDirectLive && payload.type === 'session.started') {
+            onSessionReady();
           }
           if (
-            payload.model &&
-            typeof payload.model === 'string' &&
-            payload.model !== 'minimax-realtime'
+            isDirectLive &&
+            payload.type === 'session.delegation.created' &&
+            payload.delegation_id
           ) {
-            payload.model = 'minimax-realtime';
-            needsReserialize = true;
+            setActiveDelegationId(payload.delegation_id);
           }
-          if (needsReserialize) {
-            outgoingData = JSON.stringify(payload);
-          }
-        }
 
-        if (serverWs.readyState === WebSocket.OPEN) {
-          serverWs.send(outgoingData);
+          const { transformed, secondaryEvent } = RealtimeGatewayAdapter.transformUpstreamEvent(
+            payload,
+            isDirectLive,
+          );
+
+          if (serverWs.readyState === WebSocket.OPEN) {
+            serverWs.send(JSON.stringify(transformed));
+            if (secondaryEvent) {
+              serverWs.send(JSON.stringify(secondaryEvent));
+            }
+          }
         }
 
         if (!payload || typeof payload.type !== 'string') return;
 
-        if (payload.type === 'input_audio_buffer.speech_started') {
+        if (
+          payload.type === 'input_audio_buffer.speech_started' ||
+          payload.type === 'session.input_audio.speech_started'
+        ) {
           coordinator.interrupt();
           return;
         }
 
-        let extractedUserText = '';
-        const currentItemId = payload.item_id || payload.item?.id;
-
-        if (
-          payload.type === 'conversation.item.input_audio_transcription.completed' &&
-          (payload.transcript || payload.text)
-        ) {
-          extractedUserText = String(payload.transcript || payload.text || '').trim();
-        } else if (
-          (payload.type === 'conversation.item.created' ||
-            payload.type === 'conversation.item.added' ||
-            payload.type === 'conversation.item.done') &&
-          payload.item?.role === 'user'
-        ) {
-          const contents = Array.isArray(payload.item?.content) ? payload.item.content : [];
-          for (const c of contents) {
-            if (c.transcript) extractedUserText = String(c.transcript).trim();
-            else if (c.text) extractedUserText = String(c.text).trim();
-          }
-        }
+        const extractedUserText = this.extractTranscriptText(payload);
+        const currentItemId = payload.item_id || payload.item?.id || payload.event_id;
 
         if (extractedUserText) {
-          if (currentItemId && processedItemIds.has(currentItemId)) {
-            return;
-          }
+          if (currentItemId && processedItemIds.has(currentItemId)) return;
           if (currentItemId) {
             processedItemIds.add(currentItemId);
             if (processedItemIds.size > 50) {
@@ -351,15 +389,12 @@ export class RelaySessionCoordinator {
               if (oldest) processedItemIds.delete(oldest);
             }
           }
-          const userText = extractedUserText;
-          if (!userText) return;
 
-          dialogueHistory.push({ role: 'user', content: userText });
+          dialogueHistory.push({ role: 'user', content: extractedUserText });
           cbtFsm.recordTurn('user');
           const { sequenceId: currentSeq, signal } = coordinator.nextTurn();
 
-          // 1. L1 边缘硬过滤
-          if (isL1Crisis(userText)) {
+          if (isL1Crisis(extractedUserText)) {
             crisisHandler.triggerIntervention('L1', 'L1本地即时硬过滤命中危机敏感词', [
               '自伤自杀危机',
               '紧急干预',
@@ -367,36 +402,15 @@ export class RelaySessionCoordinator {
             return;
           }
 
-          // 2. L2 异步语义旁路熔断（采用 OpenRouter Jev 决策模型，配置独立 5000ms 超时）
-          const safetyStartTime = Date.now();
-          checkL2FlashSafety(userText, {
-            apiKey: openRouterConfig.openRouterKey,
-            baseUrl: openRouterConfig.openRouterBaseUrl,
-            signal: AbortSignal.timeout(5000),
-          })
-            .then((isCrisis) => {
-              if (serverWs.readyState === WebSocket.OPEN) {
-                serverWs.send(
-                  JSON.stringify({
-                    type: 'rethink.telemetry.safety_check',
-                    turnSequence: currentSeq,
-                    isCrisis,
-                    durationMs: Date.now() - safetyStartTime,
-                    timestamp: Date.now(),
-                  }),
-                );
-              }
-              if (isCrisis && !crisisHandler.isTriggered) {
-                coordinator.interrupt();
-                crisisHandler.triggerIntervention('L2', 'L2 DeepSeek V4 Flash语义熔断命中危机', [
-                  '自伤自杀危机',
-                  '语义旁路熔断',
-                ]);
-              }
-            })
-            .catch(() => {});
+          this.dispatchL2SafetyCheck({
+            extractedUserText,
+            currentSeq,
+            serverWs,
+            coordinator,
+            crisisHandler,
+            openRouterConfig,
+          });
 
-          // 3. 影子大脑认知指导与双轨响应协调 (双轨异步极速流式回复)
           this.coordinateShadowTurn({
             shadowPipeline,
             serverWs,
@@ -404,22 +418,99 @@ export class RelaySessionCoordinator {
             coordinator,
             currentSeq,
             signal,
-            userText,
+            userText: extractedUserText,
             dialogueHistory,
             studentName: getStudentName(),
             situationalMemory: getMemory(),
             getStudentName,
             setStudentName,
+            isDirectLive,
+            getActiveDelegationId,
             dualTrack: true,
           });
         }
 
-        if (payload.type === 'response.audio_transcript.done' && payload.transcript) {
-          dialogueHistory.push({ role: 'assistant', content: payload.transcript });
+        if (
+          (payload.type === 'response.audio_transcript.done' ||
+            payload.type === 'session.output_transcript.completed') &&
+          (payload.transcript || payload.text)
+        ) {
+          dialogueHistory.push({ role: 'assistant', content: payload.transcript || payload.text });
           cbtFsm.recordTurn('assistant');
         }
       } catch {}
     });
+  }
+
+  private static extractTranscriptText(payload: any): string {
+    if (
+      (payload.type === 'conversation.item.input_audio_transcription.completed' ||
+        payload.type === 'input_audio_transcription.completed' ||
+        payload.type === 'session.input_transcript.completed') &&
+      (payload.transcript || payload.text)
+    ) {
+      return String(payload.transcript || payload.text || '').trim();
+    }
+
+    if (
+      (payload.type === 'conversation.item.created' ||
+        payload.type === 'conversation.item.added' ||
+        payload.type === 'conversation.item.done') &&
+      payload.item?.role === 'user'
+    ) {
+      const contents = Array.isArray(payload.item?.content) ? payload.item.content : [];
+      for (const c of contents) {
+        if (c.transcript) return String(c.transcript).trim();
+        if (c.text) return String(c.text).trim();
+      }
+    }
+    return '';
+  }
+
+  private static dispatchL2SafetyCheck(params: {
+    extractedUserText: string;
+    currentSeq: number;
+    serverWs: WebSocket;
+    coordinator: BargeInCoordinator;
+    crisisHandler: CrisisHandler;
+    openRouterConfig: { openRouterKey: string; openRouterBaseUrl?: string };
+  }): void {
+    const {
+      extractedUserText,
+      currentSeq,
+      serverWs,
+      coordinator,
+      crisisHandler,
+      openRouterConfig,
+    } = params;
+    const safetyStartTime = Date.now();
+
+    checkL2FlashSafety(extractedUserText, {
+      apiKey: openRouterConfig.openRouterKey,
+      baseUrl: openRouterConfig.openRouterBaseUrl,
+      signal: AbortSignal.timeout(5000),
+    })
+      .then((isCrisis) => {
+        if (serverWs.readyState === WebSocket.OPEN) {
+          serverWs.send(
+            JSON.stringify({
+              type: 'rethink.telemetry.safety_check',
+              turnSequence: currentSeq,
+              isCrisis,
+              durationMs: Date.now() - safetyStartTime,
+              timestamp: Date.now(),
+            }),
+          );
+        }
+        if (isCrisis && !crisisHandler.isTriggered) {
+          coordinator.interrupt();
+          crisisHandler.triggerIntervention('L2', 'L2 DeepSeek V4 Flash语义熔断命中危机', [
+            '自伤自杀危机',
+            '语义旁路熔断',
+          ]);
+        }
+      })
+      .catch(() => {});
   }
 
   private static coordinateShadowTurn(params: {
@@ -435,29 +526,9 @@ export class RelaySessionCoordinator {
     situationalMemory: any;
     getStudentName: () => string;
     setStudentName: (name: string) => void;
-    timeoutMs?: number;
+    isDirectLive: boolean;
+    getActiveDelegationId: () => string | null;
     dualTrack?: boolean;
-  }): void {
-    if (params.dualTrack) {
-      this.coordinateDualTrackTurn(params);
-    } else {
-      this.coordinateSingleTrackTurn(params);
-    }
-  }
-
-  private static coordinateDualTrackTurn(params: {
-    shadowPipeline: ShadowReasoningPipeline;
-    serverWs?: WebSocket;
-    upstreamWs: WebSocket;
-    coordinator: BargeInCoordinator;
-    currentSeq: number;
-    signal: AbortSignal;
-    userText: string;
-    dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
-    studentName: string;
-    situationalMemory: any;
-    getStudentName: () => string;
-    setStudentName: (name: string) => void;
   }): void {
     const {
       shadowPipeline,
@@ -472,14 +543,18 @@ export class RelaySessionCoordinator {
       situationalMemory,
       getStudentName,
       setStudentName,
+      isDirectLive,
+      getActiveDelegationId,
     } = params;
 
     const shadowStartTime = Date.now();
 
-    // 1. 快轨：即刻触发流式语音回复（零阻塞，延迟降至最低）
-    this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, null);
+    // 非云端直连模式下触发显式流式回复
+    if (!isDirectLive) {
+      this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, null);
+    }
 
-    // 2. 慢轨：影子大脑旁路并发认知推演与会话指导演进
+    // 慢轨：影子大脑旁路并发认知推演
     shadowPipeline
       .execute({
         userText,
@@ -511,105 +586,31 @@ export class RelaySessionCoordinator {
         }
 
         if (hint && upstreamWs.readyState === WebSocket.OPEN) {
-          upstreamWs.send(
-            JSON.stringify({
-              type: 'session.update',
-              session: {
-                type: 'realtime',
-                instructions: `【影子大脑认知指导】：${hint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语交流，并在后续对话中自然贯彻此认知引导。`,
-              },
-            }),
-          );
+          const delegationId = getActiveDelegationId();
+          if (isDirectLive) {
+            if (delegationId) {
+              upstreamWs.send(
+                JSON.stringify({
+                  type: 'session.thinking.append',
+                  delegation_id: delegationId,
+                  thinking: `【影子大脑认知指导】：${hint.trim()}`,
+                }),
+              );
+            }
+          } else {
+            upstreamWs.send(
+              JSON.stringify({
+                type: 'session.update',
+                session: {
+                  type: 'realtime',
+                  instructions: `【影子大脑认知指导】：${hint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语交流，并在后续对话中自然贯彻此认知引导。`,
+                },
+              }),
+            );
+          }
         }
       })
       .catch(() => null);
-  }
-
-  private static coordinateSingleTrackTurn(params: {
-    shadowPipeline: ShadowReasoningPipeline;
-    serverWs?: WebSocket;
-    upstreamWs: WebSocket;
-    coordinator: BargeInCoordinator;
-    currentSeq: number;
-    signal: AbortSignal;
-    userText: string;
-    dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
-    studentName: string;
-    situationalMemory: any;
-    getStudentName: () => string;
-    setStudentName: (name: string) => void;
-    timeoutMs?: number;
-  }): void {
-    const {
-      shadowPipeline,
-      serverWs,
-      upstreamWs,
-      coordinator,
-      currentSeq,
-      signal,
-      userText,
-      dialogueHistory,
-      studentName,
-      situationalMemory,
-      getStudentName,
-      setStudentName,
-      timeoutMs = 2500,
-    } = params;
-
-    let hasResponded = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const shadowStartTime = Date.now();
-
-    const timeoutPromise = new Promise<null>((resolve) => {
-      timer = setTimeout(() => {
-        resolve(null);
-      }, timeoutMs);
-    });
-
-    signal.addEventListener(
-      'abort',
-      () => {
-        if (timer) clearTimeout(timer);
-      },
-      { once: true },
-    );
-
-    const shadowPromise = shadowPipeline
-      .execute({
-        userText,
-        dialogueHistory,
-        studentName,
-        situationalMemory,
-        signal,
-        isTurnValid: () => coordinator.isValid(currentSeq) && !hasResponded,
-        onExtractedName: (name) => {
-          if (!getStudentName()) setStudentName(name);
-        },
-      })
-      .catch(() => null);
-
-    void Promise.race([shadowPromise, timeoutPromise]).then((hint) => {
-      if (timer) clearTimeout(timer);
-      if (hasResponded) return;
-      hasResponded = true;
-      const durationMs = Date.now() - shadowStartTime;
-
-      if (serverWs && serverWs.readyState === WebSocket.OPEN) {
-        serverWs.send(
-          JSON.stringify({
-            type: 'rethink.telemetry.shadow_directive',
-            turnSequence: currentSeq,
-            userText,
-            cognitiveHint: hint,
-            durationMs,
-            fallback: !hint,
-            timestamp: Date.now(),
-          }),
-        );
-      }
-
-      this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, hint);
-    });
   }
 
   private static triggerTurnResponse(
@@ -619,12 +620,8 @@ export class RelaySessionCoordinator {
     signal: AbortSignal,
     cognitiveHint?: string | null,
   ): void {
-    if (!coordinator.isValid(currentSeq) || signal.aborted) {
-      return;
-    }
-    if (upstreamWs.readyState !== WebSocket.OPEN) {
-      return;
-    }
+    if (!coordinator.isValid(currentSeq) || signal.aborted) return;
+    if (upstreamWs.readyState !== WebSocket.OPEN) return;
 
     if (cognitiveHint && cognitiveHint.trim()) {
       upstreamWs.send(
