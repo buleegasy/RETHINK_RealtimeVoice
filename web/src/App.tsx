@@ -48,9 +48,23 @@ export function App() {
     onSilenceTimeout: endCall,
   });
 
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (runMode !== 'kiosk' && runMode !== 'test') {
       hasAutoLoggedInRef.current = false;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
     }
   }, [runMode]);
 
@@ -71,12 +85,18 @@ export function App() {
           if (data.success && data.user && data.token) {
             login(data.user, data.token);
           } else {
-            hasAutoLoggedInRef.current = false;
+            if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+            retryTimeoutRef.current = setTimeout(() => {
+              hasAutoLoggedInRef.current = false;
+            }, 5000);
           }
         })
         .catch((err) => {
-          hasAutoLoggedInRef.current = false;
           console.warn('[App] 自动免密鉴权异常:', err);
+          if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = setTimeout(() => {
+            hasAutoLoggedInRef.current = false;
+          }, 5000);
         });
     }
   }, [runMode, isAuthenticated, login]);

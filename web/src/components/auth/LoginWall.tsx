@@ -69,12 +69,12 @@ export const LoginWall: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center p-4 bg-white text-black select-none font-sans">
+    <div className="fixed inset-0 flex items-center justify-center p-4 bg-[#f8f9fa] text-black select-none font-sans">
       <motion.div
-        initial={{ opacity: 0.2, y: 8 }}
+        initial={{ opacity: 0.9, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="w-full max-w-sm bg-white border border-black/15 rounded-2xl p-8 flex flex-col"
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="w-full max-w-sm bg-white border border-black/15 shadow-sm rounded-2xl p-8 flex flex-col"
       >
         <div className="text-center mb-8">
           <h1
