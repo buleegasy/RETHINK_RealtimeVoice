@@ -316,6 +316,7 @@ describe('R3 影子大脑单轮纯净认知注入与堆叠污染消除 (No Syste
       situationalMemory: null,
       getStudentName: () => '',
       setStudentName: () => {},
+      timeoutMs: 800,
     });
 
     // 快进 850ms（超过 800ms 超时）

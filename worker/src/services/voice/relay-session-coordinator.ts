@@ -271,6 +271,7 @@ export class RelaySessionCoordinator {
       getMemory,
     } = params;
 
+    const processedItemIds = new Set<string>();
     upstreamWs.addEventListener('message', async (event) => {
       try {
         let outgoingData = event.data;
@@ -319,12 +320,19 @@ export class RelaySessionCoordinator {
         }
 
         let extractedUserText = '';
+        const currentItemId = payload.item_id || payload.item?.id;
+
         if (
           payload.type === 'conversation.item.input_audio_transcription.completed' &&
           (payload.transcript || payload.text)
         ) {
           extractedUserText = String(payload.transcript || payload.text || '').trim();
-        } else if (payload.type === 'conversation.item.created' && payload.item?.role === 'user') {
+        } else if (
+          (payload.type === 'conversation.item.created' ||
+            payload.type === 'conversation.item.added' ||
+            payload.type === 'conversation.item.done') &&
+          payload.item?.role === 'user'
+        ) {
           const contents = Array.isArray(payload.item?.content) ? payload.item.content : [];
           for (const c of contents) {
             if (c.transcript) extractedUserText = String(c.transcript).trim();
@@ -333,6 +341,16 @@ export class RelaySessionCoordinator {
         }
 
         if (extractedUserText) {
+          if (currentItemId && processedItemIds.has(currentItemId)) {
+            return;
+          }
+          if (currentItemId) {
+            processedItemIds.add(currentItemId);
+            if (processedItemIds.size > 50) {
+              const oldest = processedItemIds.values().next().value;
+              if (oldest) processedItemIds.delete(oldest);
+            }
+          }
           const userText = extractedUserText;
           if (!userText) return;
 
@@ -416,6 +434,7 @@ export class RelaySessionCoordinator {
     situationalMemory: any;
     getStudentName: () => string;
     setStudentName: (name: string) => void;
+    timeoutMs?: number;
   }): void {
     const {
       shadowPipeline,
@@ -430,6 +449,7 @@ export class RelaySessionCoordinator {
       situationalMemory,
       getStudentName,
       setStudentName,
+      timeoutMs = 2500,
     } = params;
 
     let hasResponded = false;
@@ -439,7 +459,7 @@ export class RelaySessionCoordinator {
     const timeoutPromise = new Promise<null>((resolve) => {
       timer = setTimeout(() => {
         resolve(null);
-      }, 800);
+      }, timeoutMs);
     });
 
     signal.addEventListener(
