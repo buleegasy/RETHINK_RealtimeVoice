@@ -1,4 +1,4 @@
-export type CapsuleCategory = 'academic' | 'peer' | 'family' | 'self_worth';
+export type CapsuleCategory = 'somatic' | 'emotion' | 'academic' | 'peer' | 'family' | 'self_worth';
 
 export interface CbtCapsule {
   id: string;

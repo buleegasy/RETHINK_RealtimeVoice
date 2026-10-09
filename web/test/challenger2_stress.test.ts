@@ -307,5 +307,36 @@ describe('Challenger 2 Empirical Stress Test: Component Limits, Audio Lifecycle 
       expect(fallbackContext).toContain('未匹配到特定干预方案');
       expect(fallbackContext).toContain('积极倾听和情绪共鸣');
     });
+
+    it('本地回退知识库中 100% 胶囊切块长度严格满足 <= 50 汉字规范', () => {
+      expect(ragProvider.fallbackKnowledge.length).toBeGreaterThanOrEqual(8);
+      for (const item of ragProvider.fallbackKnowledge) {
+        expect(item.content.length).toBeGreaterThan(0);
+        expect(item.content.length).toBeLessThanOrEqual(50);
+        expect(item.empathyLead?.length).toBeGreaterThan(10);
+        expect(item.socraticPivot?.length).toBeGreaterThan(15);
+        expect(item.tabooPhrases?.length).toBeGreaterThanOrEqual(3);
+      }
+    });
+
+    it('急性躯体化症状与高唤醒查询能够精准召回对应干预胶囊且得分 >= 0.50', async () => {
+      // 躯体化过度通气类别
+      const somaticResp = await ragProvider.retrieve('喘不上气');
+      expect(somaticResp.length).toBeGreaterThan(0);
+      expect(somaticResp[0].id).toBe('somatic_hyperventilation');
+      expect(somaticResp[0].score).toBeGreaterThanOrEqual(0.5);
+
+      // 躯体化心跳发抖类别
+      const tremorResp = await ragProvider.retrieve('心跳好快好慌');
+      expect(tremorResp.length).toBeGreaterThan(0);
+      expect(tremorResp[0].id).toBe('somatic_tachycardia_tremor');
+      expect(tremorResp[0].score).toBeGreaterThanOrEqual(0.5);
+
+      // 学业考砸去灾难化
+      const examResp = await ragProvider.retrieve('考试考砸了完蛋了');
+      expect(examResp.length).toBeGreaterThan(0);
+      expect(examResp[0].id).toBe('acad_exam_catastrophizing');
+      expect(examResp[0].score).toBeGreaterThanOrEqual(0.5);
+    });
   });
 });

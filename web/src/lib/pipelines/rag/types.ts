@@ -1,10 +1,11 @@
 export interface RagChunk {
   id: string;
+  category?: string;
   title: string;
+  keywords?: string[];
+  tags?: string[];
   content: string;
   score: number;
-  tags?: string[];
-  category?: string;
   empathyLead?: string;
   socraticPivot?: string;
   tabooPhrases?: string[];
