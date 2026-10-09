@@ -325,11 +325,10 @@ export class RelaySessionCoordinator {
             return;
           }
 
-          // 2. L2 异步语义旁路熔断（采用独立 5000ms 超时信号，防止学生语速快或下一轮倾诉打断导致危机判定被丢弃）
+          // 2. L2 异步语义旁路熔断（采用 OpenRouter Jev 决策模型，配置独立 5000ms 超时）
           checkL2FlashSafety(userText, {
             apiKey: openRouterConfig.openRouterKey,
             baseUrl: openRouterConfig.openRouterBaseUrl,
-            model: openRouterConfig.openRouterModel,
             signal: AbortSignal.timeout(5000),
           })
             .then((isCrisis) => {

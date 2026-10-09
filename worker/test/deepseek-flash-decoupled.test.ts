@@ -377,5 +377,67 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
       const ownerData = (await ownerRes.json()) as any;
       expect(ownerData.memory.userName).toBe('小B');
     });
+
+    it('简报提炼、宏观大盘与情景记忆默认解析为 MiniMax-01 最强文本模型', async () => {
+      let requestedModel = '';
+      globalThis.fetch = vi.fn().mockImplementation(async (_url: string, opts: any) => {
+        const body = JSON.parse(opts.body);
+        requestedModel = body.model;
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    crisisLevel: 0,
+                    isCrisis: false,
+                    crisisSummary: '正常日常交流',
+                    coreConcerns: ['学业'],
+                    emotionalValence: 0.1,
+                    cognitiveDistortions: [],
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      });
+
+      await generateStructuredReportWithFlash('学生: 老师好，今天感觉还行', {
+        apiKey: 'test-key',
+      });
+      expect(requestedModel).toBe('minimax/minimax-01');
+    });
+
+    it('危机判定能无缝适配 OpenRouter Jev Decisions API 协议与 noul 概率判定', async () => {
+      let interceptedEndpoint = '';
+      let interceptedBody: any = null;
+
+      globalThis.fetch = vi.fn().mockImplementation(async (url: string, opts: any) => {
+        interceptedEndpoint = url;
+        interceptedBody = JSON.parse(opts.body);
+        return {
+          ok: true,
+          json: async () => ({
+            decisions: {
+              is_crisis: {
+                type: 'noul',
+                result: true,
+                probability: 0.98,
+              },
+            },
+          }),
+        };
+      });
+
+      const isCrisis = await checkL2FlashSafety('我真的撑不下去了，想从天台跳下去', {
+        apiKey: 'test-openrouter-key',
+      });
+
+      expect(isCrisis).toBe(true);
+      expect(interceptedEndpoint).toContain('/alpha/decisions');
+      expect(interceptedBody.questions?.is_crisis?.type).toBe('noul');
+    });
   });
 });

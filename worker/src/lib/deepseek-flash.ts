@@ -33,6 +33,7 @@ export interface StructuredSessionReport extends EvaluationResult {
 }
 
 export const DEEPSEEK_V4_FLASH_MODEL = 'deepseek/deepseek-v4-flash';
+export const MINIMAX_TEXT_01_MODEL = 'minimax/minimax-01';
 const RUNTIME_FLASH_MODEL = atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx');
 
 function resolveFlashModel(override?: string): string {
@@ -42,10 +43,17 @@ function resolveFlashModel(override?: string): string {
   return RUNTIME_FLASH_MODEL;
 }
 
+export function resolveReportingModel(override?: string): string {
+  if (override && override !== DEEPSEEK_V4_FLASH_MODEL) {
+    return override;
+  }
+  return MINIMAX_TEXT_01_MODEL;
+}
+
 export async function performShadowReasoning(
   userText: string,
   context: ShadowReasoningContext,
-  options?: FlashOptions
+  options?: FlashOptions,
 ): Promise<ShadowReasoningResult | null> {
   const clean = (userText || '').trim();
   if (!clean) return null;
@@ -54,7 +62,9 @@ export async function performShadowReasoning(
   if (!apiKey) {
     if (context.cbtHints && context.cbtHints.length > 0) {
       const hint = context.cbtHints[0].trim();
-      const formatted = hint.startsWith('你应该') ? hint : `你应该${hint.replace(/^(请|建议|需|需要)/, '')}`;
+      const formatted = hint.startsWith('你应该')
+        ? hint
+        : `你应该${hint.replace(/^(请|建议|需|需要)/, '')}`;
       return {
         cognitiveHint: formatted,
       };
@@ -110,7 +120,9 @@ ${cbtStr || '（通用倾听与共情）'}
     if (!res.ok) {
       if (context.cbtHints && context.cbtHints.length > 0) {
         const hint = context.cbtHints[0].trim();
-        const formatted = hint.startsWith('你应该') ? hint : `你应该${hint.replace(/^(请|建议|需|需要)/, '')}`;
+        const formatted = hint.startsWith('你应该')
+          ? hint
+          : `你应该${hint.replace(/^(请|建议|需|需要)/, '')}`;
         return { cognitiveHint: formatted };
       }
       return null;
@@ -130,13 +142,21 @@ ${cbtStr || '（通用倾听与共情）'}
 
     return {
       cognitiveHint,
-      extractedName: typeof parsed.extractedName === 'string' && parsed.extractedName ? parsed.extractedName : undefined,
-      coreConcern: typeof parsed.coreConcern === 'string' && parsed.coreConcern ? parsed.coreConcern : undefined,
+      extractedName:
+        typeof parsed.extractedName === 'string' && parsed.extractedName
+          ? parsed.extractedName
+          : undefined,
+      coreConcern:
+        typeof parsed.coreConcern === 'string' && parsed.coreConcern
+          ? parsed.coreConcern
+          : undefined,
     };
   } catch {
     if (context.cbtHints && context.cbtHints.length > 0) {
       const hint = context.cbtHints[0].trim();
-      const formatted = hint.startsWith('你应该') ? hint : `你应该${hint.replace(/^(请|建议|需|需要)/, '')}`;
+      const formatted = hint.startsWith('你应该')
+        ? hint
+        : `你应该${hint.replace(/^(请|建议|需|需要)/, '')}`;
       return { cognitiveHint: formatted };
     }
     return null;
@@ -145,7 +165,7 @@ ${cbtStr || '（通用倾听与共情）'}
 
 export async function generateStructuredReportWithFlash(
   transcript: string,
-  options?: FlashOptions
+  options?: FlashOptions,
 ): Promise<StructuredSessionReport> {
   const fallback = evaluateTranscriptRuleBased(transcript);
   const cleanTranscript = (transcript || '').trim();
@@ -159,7 +179,7 @@ export async function generateStructuredReportWithFlash(
   }
 
   const baseUrl = (options?.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-  const model = resolveFlashModel(options?.model);
+  const model = resolveReportingModel(options?.model);
   const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
   const prompt = `你是经验丰富的校园心理专职督导老师。请针对以下学生实际倾诉对话文本，为学校心理专职教师撰写一份自然、客观、求实的“来访情绪评估简报”。
@@ -220,13 +240,21 @@ export async function generateStructuredReportWithFlash(
     const raw = data?.choices?.[0]?.message?.content || '{}';
     const parsed = JSON.parse(raw);
 
-    const crisisLevelNum = typeof parsed.crisisLevel === 'number' ? parsed.crisisLevel : fallback.crisisLevel;
+    const crisisLevelNum =
+      typeof parsed.crisisLevel === 'number' ? parsed.crisisLevel : fallback.crisisLevel;
     const isCrisis = typeof parsed.isCrisis === 'boolean' ? parsed.isCrisis : crisisLevelNum >= 3;
 
     // 清洗认知偏差列表，彻底阻断“阶段性现实困扰”套话
-    let parsedDistortions: string[] = Array.isArray(parsed.cognitiveDistortions) ? parsed.cognitiveDistortions : [];
+    let parsedDistortions: string[] = Array.isArray(parsed.cognitiveDistortions)
+      ? parsed.cognitiveDistortions
+      : [];
     parsedDistortions = parsedDistortions
-      .filter((d: string) => typeof d === 'string' && !d.includes('阶段性现实困扰') && !d.includes('未检测到显著偏执型认知歪曲'))
+      .filter(
+        (d: string) =>
+          typeof d === 'string' &&
+          !d.includes('阶段性现实困扰') &&
+          !d.includes('未检测到显著偏执型认知歪曲'),
+      )
       .map((d: string) => d.trim())
       .filter(Boolean);
     if (parsedDistortions.length === 0) {
@@ -234,7 +262,8 @@ export async function generateStructuredReportWithFlash(
     }
 
     // 微行动练习求实清洗：无实质练习或模板套话直接设为 undefined / 空
-    let cleanedHomework = typeof parsed.homeworkAction === 'string' ? parsed.homeworkAction.trim() : '';
+    let cleanedHomework =
+      typeof parsed.homeworkAction === 'string' ? parsed.homeworkAction.trim() : '';
     if (
       !cleanedHomework ||
       cleanedHomework.includes('保持规律作息') ||
@@ -247,17 +276,31 @@ export async function generateStructuredReportWithFlash(
     return {
       crisisLevel: (crisisLevelNum >= 0 && crisisLevelNum <= 3 ? crisisLevelNum : 0) as any,
       isCrisis,
-      crisisSummary: typeof parsed.crisisSummary === 'string' && parsed.crisisSummary ? parsed.crisisSummary : fallback.crisisSummary,
-      coreConcerns: Array.isArray(parsed.coreConcerns) && parsed.coreConcerns.length > 0 ? parsed.coreConcerns : fallback.coreConcerns,
-      emotionalValence: typeof parsed.emotionalValence === 'number' ? parsed.emotionalValence : fallback.emotionalValence,
+      crisisSummary:
+        typeof parsed.crisisSummary === 'string' && parsed.crisisSummary
+          ? parsed.crisisSummary
+          : fallback.crisisSummary,
+      coreConcerns:
+        Array.isArray(parsed.coreConcerns) && parsed.coreConcerns.length > 0
+          ? parsed.coreConcerns
+          : fallback.coreConcerns,
+      emotionalValence:
+        typeof parsed.emotionalValence === 'number'
+          ? parsed.emotionalValence
+          : fallback.emotionalValence,
       cognitiveDistortions: parsedDistortions,
       initialEmotion: typeof parsed.initialEmotion === 'string' ? parsed.initialEmotion : undefined,
       finalEmotion: typeof parsed.finalEmotion === 'string' ? parsed.finalEmotion : undefined,
       deltaNotes: typeof parsed.deltaNotes === 'string' ? parsed.deltaNotes : undefined,
       homeworkAction: cleanedHomework || undefined,
       keyTakeaways: Array.isArray(parsed.keyTakeaways) ? parsed.keyTakeaways : undefined,
-      deidentifiedTranscript: typeof parsed.deidentifiedTranscript === 'string' ? parsed.deidentifiedTranscript : fallback.deidentifiedTranscript,
-      actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : ['安排班级心育委员日常关怀', '必要时预约心理中心面询'],
+      deidentifiedTranscript:
+        typeof parsed.deidentifiedTranscript === 'string'
+          ? parsed.deidentifiedTranscript
+          : fallback.deidentifiedTranscript,
+      actionItems: Array.isArray(parsed.actionItems)
+        ? parsed.actionItems
+        : ['安排班级心育委员日常关怀', '必要时预约心理中心面询'],
       evaluatedBy: 'DeepSeek V4 Flash',
     };
   } catch {
@@ -276,7 +319,7 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
     avgValence: number;
     topConcerns?: Array<{ name: string; count: number }>;
   },
-  options?: FlashOptions
+  options?: FlashOptions,
 ): Promise<string> {
   const { totalSessions, crisisCount, avgValence, topConcerns } = stats;
   if (totalSessions === 0) {
@@ -287,18 +330,19 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
   const concernStr = concernNames.length > 0 ? concernNames.join('、') : '日常闲聊与尝试';
 
   // 客观真实的专业观察兜底（彻底去格式化，严格 20-50 字）
-  const fallback = crisisCount > 0
-    ? `近期校园监测到个别情绪高压个案，主要涉及${concernStr.slice(0, 12)}等生活事件，建议专职老师重点跟进，常规学生心境整体受控。`
-    : (concernNames.length === 0 || concernStr.includes('闲聊') || concernStr.includes('日常'))
-      ? `本周学生多以轻量交流与日常寒暄为主，整体心境平和自然，未见群体性学业或情绪焦虑集聚。`
-      : `本周来访焦点主要聚焦于${concernStr.slice(0, 12)}，学生在倾诉后情绪多能得到自然舒缓与理清，校园心境总体平稳。`;
+  const fallback =
+    crisisCount > 0
+      ? `近期校园监测到个别情绪高压个案，主要涉及${concernStr.slice(0, 12)}等生活事件，建议专职老师重点跟进，常规学生心境整体受控。`
+      : concernNames.length === 0 || concernStr.includes('闲聊') || concernStr.includes('日常')
+        ? `本周学生多以轻量交流与日常寒暄为主，整体心境平和自然，未见群体性学业或情绪焦虑集聚。`
+        : `本周来访焦点主要聚焦于${concernStr.slice(0, 12)}，学生在倾诉后情绪多能得到自然舒缓与理清，校园心境总体平稳。`;
 
   if (!options?.apiKey) {
     return fallback;
   }
 
   const baseUrl = (options?.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-  const model = resolveFlashModel(options?.model);
+  const model = resolveReportingModel(options?.model);
   const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
   const prompt = `你是经验丰富的校园心理专职督导老师。请结合本周校园倾诉的整体情况，撰写一段20-50字的大屏“本周心境与趋势观察”。
@@ -310,7 +354,7 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
 
 【本周倾诉背景参考】：
 - 主要涉及主题：${concernStr}
-- 情绪总体基调：${crisisCount > 0 ? '存在个别需线下重点关怀的突发高压事件' : (avgValence >= 0.2 ? '整体积极轻松' : (avgValence <= -0.3 ? '普遍承载一定现实压力与负重感' : '整体处于常态平稳交流状态'))}
+- 情绪总体基调：${crisisCount > 0 ? '存在个别需线下重点关怀的突发高压事件' : avgValence >= 0.2 ? '整体积极轻松' : avgValence <= -0.3 ? '普遍承载一定现实压力与负重感' : '整体处于常态平稳交流状态'}
 - 倾诉样本活跃度：${totalSessions <= 3 ? '少量探索性进线' : '常态多频进线'}
 `;
 
@@ -334,7 +378,9 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
 
     if (res.ok) {
       const data: any = await res.json();
-      let reply = (data?.choices?.[0]?.message?.content || '').trim().replace(/^["“'‘]+|["”'’]+$/g, '');
+      let reply = (data?.choices?.[0]?.message?.content || '')
+        .trim()
+        .replace(/^["“'‘]+|["”'’]+$/g, '');
       if (reply.length >= 18 && reply.length <= 55) {
         return reply;
       }
@@ -343,7 +389,6 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
 
   return fallback;
 }
-
 
 export function formatSituationalMemoryPrompt(memory?: SituationalMemory | null): string {
   if (!memory || !memory.summaryParagraph) return '';
@@ -360,7 +405,9 @@ export function formatSituationalMemoryPrompt(memory?: SituationalMemory | null)
     lines.push(`- 近期关键事件：${memory.recentSituations.join('；')}`);
   }
   lines.push(`- 个人情景摘要：${memory.summaryParagraph}`);
-  lines.push('【记忆交互指导】开场白之后、当学生开口回应时，请自然结合上述过往个人情景接话，表达你对Ta过往经历与心境的关切与理解（例如询问上次探讨事情的后续进展），无需让学生重复介绍背景。');
+  lines.push(
+    '【记忆交互指导】开场白之后、当学生开口回应时，请自然结合上述过往个人情景接话，表达你对Ta过往经历与心境的关切与理解（例如询问上次探讨事情的后续进展），无需让学生重复介绍背景。',
+  );
   return lines.join('\n');
 }
 
@@ -368,7 +415,7 @@ export async function consolidateSituationalMemoryWithLLM(
   userId: string,
   existingMemory: SituationalMemory | null,
   newDialogues: Array<{ role: string; content: string }>,
-  options?: FlashOptions
+  options?: FlashOptions,
 ): Promise<SituationalMemory | null> {
   const cleanId = (userId || '').trim();
   if (!cleanId || !newDialogues || newDialogues.length === 0) {
@@ -403,7 +450,7 @@ export async function consolidateSituationalMemoryWithLLM(
   }
 
   const baseUrl = (options?.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-  const model = resolveFlashModel(options?.model);
+  const model = resolveReportingModel(options?.model);
   const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
   const prompt = `你是校园心理支持长程个人情景记忆中枢。请根据来访学生【过往情景记忆档案】，以及本次新增的【真实对话记录】，使用严谨的认知提炼能力更新该学生的个人情景记忆。
@@ -457,13 +504,34 @@ ${existingMemory ? JSON.stringify(existingMemory) : '（无既往记忆）'}
 
     return {
       userId: cleanId,
-      userName: typeof parsed.userName === 'string' && parsed.userName ? parsed.userName : existingMemory?.userName,
-      identityContext: typeof parsed.identityContext === 'string' && parsed.identityContext ? parsed.identityContext : existingMemory?.identityContext,
-      coreConcerns: Array.isArray(parsed.coreConcerns) && parsed.coreConcerns.length > 0 ? parsed.coreConcerns : (existingMemory?.coreConcerns || []),
-      significantOthers: Array.isArray(parsed.significantOthers) && parsed.significantOthers.length > 0 ? parsed.significantOthers : (existingMemory?.significantOthers || []),
-      recentSituations: Array.isArray(parsed.recentSituations) && parsed.recentSituations.length > 0 ? parsed.recentSituations : (existingMemory?.recentSituations || []),
-      effectiveStrategies: Array.isArray(parsed.effectiveStrategies) && parsed.effectiveStrategies.length > 0 ? parsed.effectiveStrategies : (existingMemory?.effectiveStrategies || []),
-      summaryParagraph: typeof parsed.summaryParagraph === 'string' && parsed.summaryParagraph ? parsed.summaryParagraph : (existingMemory?.summaryParagraph || '学生曾进行深度心理倾诉。'),
+      userName:
+        typeof parsed.userName === 'string' && parsed.userName
+          ? parsed.userName
+          : existingMemory?.userName,
+      identityContext:
+        typeof parsed.identityContext === 'string' && parsed.identityContext
+          ? parsed.identityContext
+          : existingMemory?.identityContext,
+      coreConcerns:
+        Array.isArray(parsed.coreConcerns) && parsed.coreConcerns.length > 0
+          ? parsed.coreConcerns
+          : existingMemory?.coreConcerns || [],
+      significantOthers:
+        Array.isArray(parsed.significantOthers) && parsed.significantOthers.length > 0
+          ? parsed.significantOthers
+          : existingMemory?.significantOthers || [],
+      recentSituations:
+        Array.isArray(parsed.recentSituations) && parsed.recentSituations.length > 0
+          ? parsed.recentSituations
+          : existingMemory?.recentSituations || [],
+      effectiveStrategies:
+        Array.isArray(parsed.effectiveStrategies) && parsed.effectiveStrategies.length > 0
+          ? parsed.effectiveStrategies
+          : existingMemory?.effectiveStrategies || [],
+      summaryParagraph:
+        typeof parsed.summaryParagraph === 'string' && parsed.summaryParagraph
+          ? parsed.summaryParagraph
+          : existingMemory?.summaryParagraph || '学生曾进行深度心理倾诉。',
       lastUpdated: now,
     };
   } catch {

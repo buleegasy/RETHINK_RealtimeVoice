@@ -766,6 +766,9 @@ export function isNegatedCrisis(text: string): boolean {
 // 7. L2 DeepSeek V4 Flash 语义旁路分析
 // -------------------------------------------------------------
 
+// 默认危机判定模型采用 OpenRouter 上的 Jev 决策模型
+export const OPENROUTER_JEV_MODEL = atob('dHlwZXNhZmUvamV2LWxhdGVzdA==');
+
 export async function checkL2FlashSafety(
   text: string,
   options?: SafetyCheckOptions,
@@ -780,10 +783,61 @@ export async function checkL2FlashSafety(
   const model =
     options?.model && options.model !== 'deepseek/deepseek-v4-flash'
       ? options.model
-      : atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx');
-  const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+      : OPENROUTER_JEV_MODEL;
+
+  const isJevModel = model.toLowerCase().includes('jev');
 
   try {
+    if (isJevModel) {
+      // 1. 优先调用 OpenRouter Jev Decisions 专属决策接口 (/api/alpha/decisions)
+      const decisionsEndpoint = baseUrl.replace(/\/+v1\/?$/, '') + '/alpha/decisions';
+      const res = await fetch(decisionsEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://rethink.local',
+          'X-Title': 'RETHINK Realtime Crisis Sentinel',
+        },
+        signal: options?.signal,
+        body: JSON.stringify({
+          model,
+          state: {
+            text: clean.slice(0, 500),
+          },
+          questions: {
+            is_crisis: {
+              type: 'noul',
+              instructions:
+                '判断输入文本是否存在自杀、自残、绝命、蓄意自戕或极高危危机意图。注意排除日常夸张修辞（如累得我想死、期末考得想死）与一般学业生活压力吐槽。',
+              criteria: {
+                true: '存在真实具体的自杀、轻生、自残或绝望寻死意愿与行为企图。',
+                false: '日常倾诉、压力吐槽、口头修辞或普通困扰。',
+              },
+            },
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data?.decisions?.is_crisis !== undefined) {
+          const dec = data.decisions.is_crisis;
+          if (typeof dec.result === 'boolean') return dec.result;
+          if (typeof dec.probability === 'number') return dec.probability >= 0.5;
+          if (typeof dec === 'boolean') return dec;
+        }
+        if (data?.choices?.[0]?.message?.content) {
+          const reply = (data.choices[0].message.content || '').trim();
+          return reply.startsWith('1') || reply.includes('1');
+        }
+      }
+    }
+
+    // 2. 通用 Chat Completions 协议兜底（兼容测试桩与普通网关）
+    const endpoint = baseUrl.endsWith('/chat/completions')
+      ? baseUrl
+      : `${baseUrl}/chat/completions`;
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -814,6 +868,12 @@ export async function checkL2FlashSafety(
     if (!res.ok) return false;
 
     const data: any = await res.json();
+    if (data?.decisions?.is_crisis !== undefined) {
+      const dec = data.decisions.is_crisis;
+      if (typeof dec.result === 'boolean') return dec.result;
+      if (typeof dec.probability === 'number') return dec.probability >= 0.5;
+      if (typeof dec === 'boolean') return dec;
+    }
     const reply = (data?.choices?.[0]?.message?.content || '').trim();
     return reply.startsWith('1') || reply.includes('1');
   } catch (_err) {
