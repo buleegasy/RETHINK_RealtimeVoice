@@ -19,7 +19,6 @@ export class ShadowReasoningPipeline {
   constructor(
     env: Env,
     private readonly config: ShadowPipelineConfig,
-    private readonly upstreamWs: WebSocket,
   ) {
     this.retriever = new BgeRetriever({
       embeddingApiKey: env.EMBEDDING_API_KEY || config.upstreamKey,
@@ -37,7 +36,7 @@ export class ShadowReasoningPipeline {
     signal: AbortSignal;
     isTurnValid: () => boolean;
     onExtractedName?: (name: string) => void;
-  }): Promise<void> {
+  }): Promise<string | null> {
     const {
       userText,
       dialogueHistory,
@@ -69,35 +68,16 @@ export class ShadowReasoningPipeline {
       );
 
       if (!isTurnValid() || !reasoning) {
-        return;
+        return null;
       }
 
       if (reasoning.extractedName && onExtractedName) {
         onExtractedName(reasoning.extractedName);
       }
 
-      if (reasoning.cognitiveHint) {
-        this.injectCognitiveDirective(reasoning.cognitiveHint);
-      }
-    } catch {}
-  }
-
-  private injectCognitiveDirective(cognitiveHint: string): void {
-    if (this.upstreamWs.readyState !== WebSocket.OPEN) return;
-    this.upstreamWs.send(
-      JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'system',
-          content: [
-            {
-              type: 'input_text',
-              text: `【指令】：${cognitiveHint}（注意：你的回复必须严格控制在 1-2 句话以内，严禁超过两句话）`,
-            },
-          ],
-        },
-      }),
-    );
+      return reasoning.cognitiveHint || null;
+    } catch {
+      return null;
+    }
   }
 }

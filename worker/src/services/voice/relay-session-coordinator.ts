@@ -93,16 +93,12 @@ export class RelaySessionCoordinator {
       const openRouterBaseUrl = env.OPENROUTER_BASE_URL;
       const openRouterModel = env.OPENROUTER_MODEL || atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx');
 
-      const shadowPipeline = new ShadowReasoningPipeline(
-        env,
-        {
-          upstreamKey: config.upstreamKey,
-          openRouterKey,
-          openRouterBaseUrl,
-          openRouterModel,
-        },
-        upstreamWs,
-      );
+      const shadowPipeline = new ShadowReasoningPipeline(env, {
+        upstreamKey: config.upstreamKey,
+        openRouterKey,
+        openRouterBaseUrl,
+        openRouterModel,
+      });
 
       // 绑定客户端事件
       this.bindClientEvents({
@@ -393,14 +389,13 @@ export class RelaySessionCoordinator {
       setStudentName,
     } = params;
 
-    let turnTimedOut = false;
+    let hasResponded = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const timeoutPromise = new Promise<void>((resolve) => {
+    const timeoutPromise = new Promise<null>((resolve) => {
       timer = setTimeout(() => {
-        turnTimedOut = true;
-        resolve();
-      }, 1200);
+        resolve(null);
+      }, 800);
     });
 
     signal.addEventListener(
@@ -418,16 +413,18 @@ export class RelaySessionCoordinator {
         studentName,
         situationalMemory,
         signal,
-        isTurnValid: () => coordinator.isValid(currentSeq) && !turnTimedOut,
+        isTurnValid: () => coordinator.isValid(currentSeq) && !hasResponded,
         onExtractedName: (name) => {
           if (!getStudentName()) setStudentName(name);
         },
       })
-      .catch(() => {});
+      .catch(() => null);
 
-    void Promise.race([shadowPromise, timeoutPromise]).then(() => {
+    void Promise.race([shadowPromise, timeoutPromise]).then((hint) => {
       if (timer) clearTimeout(timer);
-      this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal);
+      if (hasResponded) return;
+      hasResponded = true;
+      this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, hint);
     });
   }
 
@@ -436,11 +433,25 @@ export class RelaySessionCoordinator {
     coordinator: BargeInCoordinator,
     currentSeq: number,
     signal: AbortSignal,
+    cognitiveHint?: string | null,
   ): void {
     if (!coordinator.isValid(currentSeq) || signal.aborted) {
       return;
     }
-    if (upstreamWs.readyState === WebSocket.OPEN) {
+    if (upstreamWs.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    if (cognitiveHint && cognitiveHint.trim()) {
+      upstreamWs.send(
+        JSON.stringify({
+          type: 'response.create',
+          response: {
+            instructions: `【本轮死党对话指导】：${cognitiveHint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语回应，语速稍快轻快利落，严格控制在 1-2 句话内（40字以内），严禁任何英文。`,
+          },
+        }),
+      );
+    } else {
       upstreamWs.send(JSON.stringify({ type: 'response.create' }));
     }
   }

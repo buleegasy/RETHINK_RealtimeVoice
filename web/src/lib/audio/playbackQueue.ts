@@ -20,8 +20,8 @@ export class PlaybackQueue {
   private pendingCleanupSources: AudioBufferSourceNode[] = [];
   public stopPlaybackTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private readonly JITTER_TARGET_SEC: number = 0.08;
-  private readonly JITTER_REBUFFER_SEC: number = 0.04;
+  private readonly JITTER_TARGET_SEC: number = 0.12;
+  private readonly JITTER_REBUFFER_SEC: number = 0.06;
 
   constructor(private listener?: PlaybackStateListener) {}
 
