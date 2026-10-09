@@ -90,7 +90,10 @@ export class RelaySessionCoordinator {
       const dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
       const openRouterKey = env.OPENROUTER_API_KEY || config.upstreamKey || '';
-      const openRouterBaseUrl = env.OPENROUTER_BASE_URL;
+      const openRouterBaseUrl =
+        env.OPENROUTER_BASE_URL ||
+        (config.upstreamKey ? config.upstreamBaseUrl : undefined) ||
+        'https://api.apiyi.com/v1';
       const openRouterModel = env.OPENROUTER_MODEL || atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx');
 
       const shadowPipeline = new ShadowReasoningPipeline(env, {
@@ -199,10 +202,11 @@ export class RelaySessionCoordinator {
           payload.session,
           currentMemory,
         );
+        const upstreamSession = RealtimeGatewayAdapter.buildUpstreamSessionPayload(cleanSession);
         upstreamWs.send(
           JSON.stringify({
             type: 'session.update',
-            session: cleanSession,
+            session: upstreamSession,
           }),
         );
       } else if (payload?.type === 'response.create') {
@@ -314,11 +318,22 @@ export class RelaySessionCoordinator {
           return;
         }
 
+        let extractedUserText = '';
         if (
           payload.type === 'conversation.item.input_audio_transcription.completed' &&
-          payload.transcript
+          (payload.transcript || payload.text)
         ) {
-          const userText = (payload.transcript as string).trim();
+          extractedUserText = String(payload.transcript || payload.text || '').trim();
+        } else if (payload.type === 'conversation.item.created' && payload.item?.role === 'user') {
+          const contents = Array.isArray(payload.item?.content) ? payload.item.content : [];
+          for (const c of contents) {
+            if (c.transcript) extractedUserText = String(c.transcript).trim();
+            else if (c.text) extractedUserText = String(c.text).trim();
+          }
+        }
+
+        if (extractedUserText) {
+          const userText = extractedUserText;
           if (!userText) return;
 
           dialogueHistory.push({ role: 'user', content: userText });
@@ -492,7 +507,7 @@ export class RelaySessionCoordinator {
         JSON.stringify({
           type: 'response.create',
           response: {
-            instructions: `【本轮死党对话指导】：${cognitiveHint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语回应，语速稍快轻快利落，严格控制在 1-2 句话内（40字以内），严禁任何英文。`,
+            instructions: `【影子大脑认知指导】：${cognitiveHint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语回应，语速稍快轻快利落，严格控制在 1-2 句话内（40字以内），严禁任何英文。`,
           },
         }),
       );

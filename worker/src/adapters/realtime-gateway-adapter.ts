@@ -93,7 +93,7 @@ export class RealtimeGatewayAdapter {
     }
 
     const cleanSession: Record<string, unknown> = {};
-    if (incoming.modalities) cleanSession.modalities = incoming.modalities;
+    cleanSession.type = 'realtime';
 
     if (incoming.instructions !== undefined) {
       cleanSession.instructions = this.resolveInstructionsWithMemory(
@@ -102,20 +102,64 @@ export class RealtimeGatewayAdapter {
       );
     }
 
-    const turnDetection = this.resolveTurnDetection(incoming);
-    if (turnDetection !== undefined) cleanSession.turn_detection = turnDetection;
+    if (incoming.output_modalities) {
+      cleanSession.output_modalities = incoming.output_modalities;
+    } else if (incoming.modalities) {
+      cleanSession.output_modalities = incoming.modalities.filter(
+        (m: string) => m === 'audio' || m === 'text',
+      );
+    }
 
-    if (incoming.voice) cleanSession.voice = incoming.voice;
-    if (incoming.input_audio_format) cleanSession.input_audio_format = incoming.input_audio_format;
-    if (incoming.output_audio_format)
-      cleanSession.output_audio_format = incoming.output_audio_format;
-    if (incoming.input_audio_transcription)
-      cleanSession.input_audio_transcription = incoming.input_audio_transcription;
+    const turnDetection = this.resolveTurnDetection(incoming);
+    if (turnDetection !== undefined) {
+      cleanSession.turn_detection = turnDetection;
+    }
+
+    const vadForAudio =
+      turnDetection !== undefined
+        ? turnDetection
+        : {
+            type: 'server_vad',
+            threshold: 0.5,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 600,
+            create_response: false,
+          };
+
+    const voice = incoming.voice || incoming.audio?.output?.voice || 'marin';
+
+    cleanSession.audio = {
+      input: {
+        format: { type: 'audio/pcm', rate: 24000 },
+        transcription: { model: atob('d2hpc3Blci0x') },
+        turn_detection: vadForAudio,
+      },
+      output: {
+        format: { type: 'audio/pcm', rate: 24000 },
+        voice,
+      },
+    };
+
+    cleanSession.max_output_tokens = 100;
+
     if (incoming.tools !== undefined) cleanSession.tools = incoming.tools;
     if (incoming.tool_choice !== undefined) cleanSession.tool_choice = incoming.tool_choice;
     if (incoming.temperature !== undefined) cleanSession.temperature = incoming.temperature;
 
     return cleanSession;
+  }
+
+  /**
+   * 构造适配底层网关协议规范的 upstream session 载荷
+   * 移除顶层 turn_detection / input_audio_transcription 避免上游网关报错 unknown_parameter
+   */
+  public static buildUpstreamSessionPayload(
+    cleanSession: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const upstreamPayload = { ...cleanSession };
+    delete upstreamPayload.turn_detection;
+    delete upstreamPayload.input_audio_transcription;
+    return upstreamPayload;
   }
 
   /**

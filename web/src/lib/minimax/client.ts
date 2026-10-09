@@ -153,7 +153,7 @@ export class MiniMaxRealtimeClient {
       voice: config.voice || DEFAULT_VOICE,
       input_audio_format: 'pcm16',
       output_audio_format: 'pcm16',
-      input_audio_transcription: { model: atob('d2hpc3Blci0x'), language: 'zh' },
+      input_audio_transcription: { model: atob('d2hpc3Blci0x') },
       turn_detection: vadConfig,
       audio: {
         input: {
@@ -185,7 +185,7 @@ export class MiniMaxRealtimeClient {
         content: [
           {
             type: 'input_text',
-            text: '（通话已建立，请立刻使用中文向来访者致以开场问候）',
+            text: '（通话已建立，请立刻向来访者致以简短开场问候）',
           },
         ],
       },
@@ -194,7 +194,8 @@ export class MiniMaxRealtimeClient {
       type: 'response.create',
       response: {
         modalities: ['audio', 'text'],
-        instructions: `你必须全程使用纯中文进行交流，严禁输出任何英文（绝对禁止说“Hi there”等英文单词）。请直接字面一字不差地输出：“${greeting}”`,
+        instructions: `你必须严格只字面说：“${greeting}”，绝对禁止添加任何多余的开场白、问候语或解释！`,
+        max_output_tokens: 30,
       },
     });
   }
@@ -381,9 +382,19 @@ export class MiniMaxRealtimeClient {
       }
 
       if (type === 'conversation.item.input_audio_transcription.completed') {
-        const transcript = event.transcript || (event as any).transcript;
+        const transcript = event.transcript || (event as any).transcript || (event as any).text;
         if (transcript) {
           this.callbacks.onTranscriptDelta?.(transcript);
+        }
+      } else if (type === 'conversation.item.created' && (event as any).item?.role === 'user') {
+        const contents = Array.isArray((event as any).item?.content)
+          ? (event as any).item.content
+          : [];
+        for (const c of contents) {
+          const t = c.transcript || c.text;
+          if (t) {
+            this.callbacks.onTranscriptDelta?.(t);
+          }
         }
       }
 
