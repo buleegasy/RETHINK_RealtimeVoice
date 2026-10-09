@@ -92,8 +92,8 @@ export class RelaySessionCoordinator {
       const openRouterKey = env.OPENROUTER_API_KEY || config.upstreamKey || '';
       const openRouterBaseUrl =
         env.OPENROUTER_BASE_URL ||
-        (config.upstreamKey ? config.upstreamBaseUrl : undefined) ||
-        'https://api.apiyi.com/v1';
+        (env.OPENROUTER_API_KEY ? 'https://openrouter.ai/api/v1' : config.upstreamBaseUrl) ||
+        'https://openrouter.ai/api/v1';
       const openRouterModel = env.OPENROUTER_MODEL || atob('Z29vZ2xlL2dlbWluaS0yLjUtZmxhc2g=');
 
       const shadowPipeline = new ShadowReasoningPipeline(env, {

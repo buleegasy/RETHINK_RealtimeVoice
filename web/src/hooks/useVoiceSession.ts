@@ -196,39 +196,13 @@ export function useVoiceSession() {
             transcriptionRef.current.feedDelta('user', transcript);
             useTelemetryStore.getState().setStreamingUserText(transcript);
           },
-          onSpeechStarted: (details) => {
-            const isPlaying = audioGraph.isPlaybackActive();
-            const playedMs = audioGraph.getPlaybackDurationMs();
-            // 若 AI 正在播音，在最初 400ms 保护期内或麦克风能量较低（<0.15）时忽略，杜绝扬声器回声自打断
-            if (isPlaying && (playedMs < 400 || audioGraph.getInputLevel() < 0.15)) {
+          onSpeechStarted: () => {
+            // 播放期间忽略服务端 VAD 的 speech_started，完全由本地带回声抑制的 BargeInDetector 处理真实打断
+            if (audioGraph.isPlaybackActive()) {
               return;
             }
-            if (isPlaying) {
-              useTelemetryStore.getState().incrementBargeIns();
-              audioGraph.stopPlayback(150);
-              const itemId = details?.itemId || clientRef.current?.getCurrentResponseItemId();
-              clientRef.current?.interrupt({
-                itemId: itemId || undefined,
-                audioEndMs: playedMs,
-              });
-              setDuplexPhase('listening');
-              useTelemetryStore.getState().setDuplexPhase('listening');
-              const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
-              if (asstSeg?.text) {
-                addDialogueTurn({
-                  id: asstSeg.id,
-                  role: 'assistant',
-                  content: asstSeg.text,
-                  timestamp: asstSeg.timestamp,
-                  stage: useBoothStore.getState().cbtStage,
-                });
-                useTelemetryStore.getState().appendFinalTranscript({
-                  role: 'assistant',
-                  text: asstSeg.text,
-                  timestamp: asstSeg.timestamp,
-                });
-              }
-            }
+            setDuplexPhase('speaking');
+            useTelemetryStore.getState().setDuplexPhase('speaking');
           },
           onSpeechStopped: () => {
             if (

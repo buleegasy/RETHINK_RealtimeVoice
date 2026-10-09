@@ -70,6 +70,7 @@ export class RealtimeGatewayAdapter {
       prefix_padding_ms: incomingVad.prefix_padding_ms ?? 200,
       silence_duration_ms: incomingVad.silence_duration_ms ?? 300,
       create_response: false,
+      interrupt_response: false,
     };
   }
 
@@ -124,6 +125,7 @@ export class RealtimeGatewayAdapter {
             prefix_padding_ms: 200,
             silence_duration_ms: 300,
             create_response: false,
+            interrupt_response: false,
           };
 
     const voice = incoming.voice || incoming.audio?.output?.voice || 'marin';
