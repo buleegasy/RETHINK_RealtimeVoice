@@ -90,8 +90,8 @@ const initialJitter: JitterMetricsData = {
   isBuffering: true,
   queuedBuffers: 0,
   scheduledCount: 0,
-  targetSec: 0.12,
-  rebufferSec: 0.06,
+  targetSec: 0.04,
+  rebufferSec: 0.02,
 };
 
 export const useTelemetryStore = create<TelemetryState>((set) => ({

@@ -67,8 +67,8 @@ export class RealtimeGatewayAdapter {
     return {
       type: 'server_vad',
       threshold: incomingVad.threshold ?? 0.5,
-      prefix_padding_ms: incomingVad.prefix_padding_ms ?? 300,
-      silence_duration_ms: incomingVad.silence_duration_ms ?? 600,
+      prefix_padding_ms: incomingVad.prefix_padding_ms ?? 200,
+      silence_duration_ms: incomingVad.silence_duration_ms ?? 300,
       create_response: false,
     };
   }
@@ -121,8 +121,8 @@ export class RealtimeGatewayAdapter {
         : {
             type: 'server_vad',
             threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 600,
+            prefix_padding_ms: 200,
+            silence_duration_ms: 300,
             create_response: false,
           };
 

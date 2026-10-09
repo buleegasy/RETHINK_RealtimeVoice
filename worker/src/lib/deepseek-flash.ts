@@ -112,7 +112,7 @@ ${cbtStr || '（通用倾听与共情）'}
           { role: 'user', content: userContent },
         ],
         temperature: 0.2,
-        max_tokens: 150,
+        max_tokens: 80,
         response_format: { type: 'json_object' },
       }),
     });

@@ -45,20 +45,29 @@ export const AudioDiagnosticsPanel: React.FC = () => {
             <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-800 p-0.5">
               <div
                 className={`h-full rounded-full transition-all duration-100 ${
-                  jitter.bufferedMs >= 120
+                  jitter.bufferedMs >= Math.round(jitter.targetSec * 1000)
                     ? 'bg-emerald-500'
-                    : jitter.bufferedMs >= 60
+                    : jitter.bufferedMs >= Math.round(jitter.rebufferSec * 1000)
                       ? 'bg-cyan-500'
                       : 'bg-amber-500'
                 }`}
-                style={{ width: `${Math.min(100, (jitter.bufferedMs / 180) * 100)}%` }}
+                style={{
+                  width: `${Math.min(
+                    100,
+                    (jitter.bufferedMs / Math.max(80, Math.round(jitter.targetSec * 2000))) * 100,
+                  )}%`,
+                }}
               />
             </div>
             <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mt-1">
               <span>0ms (枯竭)</span>
-              <span className="text-amber-400">60ms (重缓冲阈值)</span>
-              <span className="text-emerald-400">120ms (目标水位)</span>
-              <span>180ms+</span>
+              <span className="text-amber-400">
+                {Math.round(jitter.rebufferSec * 1000)}ms (重缓冲)
+              </span>
+              <span className="text-emerald-400">
+                {Math.round(jitter.targetSec * 1000)}ms (目标水位)
+              </span>
+              <span>{Math.round(jitter.targetSec * 2000)}ms+</span>
             </div>
           </div>
 

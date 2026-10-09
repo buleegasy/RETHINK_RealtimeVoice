@@ -197,34 +197,37 @@ export function useVoiceSession() {
             useTelemetryStore.getState().setStreamingUserText(transcript);
           },
           onSpeechStarted: (details) => {
-            useTelemetryStore.getState().incrementBargeIns();
+            const isPlaying = audioGraph.isPlaybackActive();
             const playedMs = audioGraph.getPlaybackDurationMs();
-            if (audioGraph.isPlaybackActive() && playedMs < 250) {
+            // 若 AI 正在播音，但在最初 350ms 内捕获到的多为本地扬声器瞬态泄漏或杂音，予以保护忽略
+            if (isPlaying && playedMs < 350) {
               return;
             }
-            audioGraph.stopPlayback(150);
-            clientRef.current?.updateTurnDetection('listening');
-            const itemId = details?.itemId || clientRef.current?.getCurrentResponseItemId();
-            clientRef.current?.interrupt({
-              itemId: itemId || undefined,
-              audioEndMs: playedMs,
-            });
-            setDuplexPhase('listening');
-            useTelemetryStore.getState().setDuplexPhase('listening');
-            const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
-            if (asstSeg?.text) {
-              addDialogueTurn({
-                id: asstSeg.id,
-                role: 'assistant',
-                content: asstSeg.text,
-                timestamp: asstSeg.timestamp,
-                stage: useBoothStore.getState().cbtStage,
+            if (isPlaying) {
+              useTelemetryStore.getState().incrementBargeIns();
+              audioGraph.stopPlayback(150);
+              const itemId = details?.itemId || clientRef.current?.getCurrentResponseItemId();
+              clientRef.current?.interrupt({
+                itemId: itemId || undefined,
+                audioEndMs: playedMs,
               });
-              useTelemetryStore.getState().appendFinalTranscript({
-                role: 'assistant',
-                text: asstSeg.text,
-                timestamp: asstSeg.timestamp,
-              });
+              setDuplexPhase('listening');
+              useTelemetryStore.getState().setDuplexPhase('listening');
+              const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
+              if (asstSeg?.text) {
+                addDialogueTurn({
+                  id: asstSeg.id,
+                  role: 'assistant',
+                  content: asstSeg.text,
+                  timestamp: asstSeg.timestamp,
+                  stage: useBoothStore.getState().cbtStage,
+                });
+                useTelemetryStore.getState().appendFinalTranscript({
+                  role: 'assistant',
+                  text: asstSeg.text,
+                  timestamp: asstSeg.timestamp,
+                });
+              }
             }
           },
           onSpeechStopped: () => {
@@ -245,13 +248,14 @@ export function useVoiceSession() {
               useTelemetryStore.getState().setDuplexPhase('thinking');
             }
             audioGraph.setAiSpeaking(true);
-            clientRef.current?.updateTurnDetection('speaking');
           },
           onTurnEnd: () => {
-            audioGraph.setAiSpeaking(false);
-            clientRef.current?.updateTurnDetection('listening');
-            setDuplexPhase('listening');
-            useTelemetryStore.getState().setDuplexPhase('listening');
+            // 注意：此处为服务端 WebSocket 数据流传输完毕，客户端可能仍在平滑播放。
+            // 严禁在此粗暴切断 setAiSpeaking(false)，避免截断尚未播完的尾音并产生自打断。
+            if (!audioGraph.isPlaybackActive()) {
+              setDuplexPhase('listening');
+              useTelemetryStore.getState().setDuplexPhase('listening');
+            }
             const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
             if (asstSeg?.text) {
               addDialogueTurn({

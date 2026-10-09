@@ -19,9 +19,10 @@ export class PlaybackQueue {
   private playbackEpoch: number = 0;
   private pendingCleanupSources: AudioBufferSourceNode[] = [];
   public stopPlaybackTimer: ReturnType<typeof setTimeout> | null = null;
+  private endDrainTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private readonly JITTER_TARGET_SEC: number = 0.12;
-  private readonly JITTER_REBUFFER_SEC: number = 0.06;
+  private readonly JITTER_TARGET_SEC: number = 0.04;
+  private readonly JITTER_REBUFFER_SEC: number = 0.02;
 
   constructor(private listener?: PlaybackStateListener) {}
 
@@ -74,6 +75,10 @@ export class PlaybackQueue {
     analyserNode: AnalyserNode | null,
   ): void {
     this.cancelPendingFadeOut(ctx, outputGainNode);
+    if (this.endDrainTimer) {
+      clearTimeout(this.endDrainTimer);
+      this.endDrainTimer = null;
+    }
 
     const buffer = base64PCMToAudioBuffer(base64Chunk, ctx, 24000);
     if (buffer.length <= 1) return;
@@ -82,12 +87,12 @@ export class PlaybackQueue {
     this.jitterBuffer.push(buffer);
     this.jitterBufferedSec += buffer.duration;
 
-    let threshold = 0;
-    if (this.scheduledSources.length === 0) {
-      threshold = this.isJitterBuffering ? this.JITTER_TARGET_SEC : this.JITTER_REBUFFER_SEC;
-    }
-
-    if (this.jitterBufferedSec >= threshold) {
+    // 若当前正在播放或者已经处于流式播放状态，立即调度冲刷，杜绝反复重缓冲卡顿
+    if (
+      this.scheduledSources.length > 0 ||
+      !this.isJitterBuffering ||
+      this.jitterBufferedSec >= this.JITTER_TARGET_SEC
+    ) {
       this.isJitterBuffering = false;
       this.flushJitterBuffer(ctx, outputGainNode, analyserNode);
     }
@@ -136,9 +141,14 @@ export class PlaybackQueue {
           this.scheduledSources.splice(idx, 1);
         }
         if (this.scheduledSources.length === 0 && this.jitterBuffer.length === 0) {
-          this.playbackStartCtxTime = null;
-          this.setAiSpeaking(false);
-          this.isJitterBuffering = true;
+          if (this.endDrainTimer) clearTimeout(this.endDrainTimer);
+          this.endDrainTimer = setTimeout(() => {
+            if (this.scheduledSources.length === 0 && this.jitterBuffer.length === 0) {
+              this.playbackStartCtxTime = null;
+              this.setAiSpeaking(false);
+              this.isJitterBuffering = true;
+            }
+          }, 100);
         }
       };
     }
@@ -194,6 +204,10 @@ export class PlaybackQueue {
       clearTimeout(this.stopPlaybackTimer);
       this.stopPlaybackTimer = null;
     }
+    if (this.endDrainTimer) {
+      clearTimeout(this.endDrainTimer);
+      this.endDrainTimer = null;
+    }
 
     this.playbackStartCtxTime = null;
     this.setAiSpeaking(false);
@@ -204,11 +218,7 @@ export class PlaybackQueue {
     const sourcesToStop = [...this.scheduledSources];
     this.scheduledSources = [];
     this.pendingCleanupSources.push(...sourcesToStop);
-
-    // 立即注销旧节点的 onended 回调，杜绝异步回调竞态
-    for (const s of sourcesToStop) {
-      s.onended = null;
-    }
+    for (const s of sourcesToStop) s.onended = null;
 
     if ((sourcesToStop.length === 0 && !wasSpeaking) || fadeDurationMs <= 0) {
       try {
@@ -226,13 +236,13 @@ export class PlaybackQueue {
       return;
     }
 
-    const fadeDurationSec = fadeDurationMs / 1000;
-    const fadeEndTime = ctx.currentTime + fadeDurationSec;
-
+    const fadeEndTime = ctx.currentTime + fadeDurationMs / 1000;
     try {
       outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
-      const currentGain = Math.max(0.001, outputGainNode.gain.value);
-      outputGainNode.gain.setValueAtTime(currentGain, ctx.currentTime);
+      outputGainNode.gain.setValueAtTime(
+        Math.max(0.001, outputGainNode.gain.value),
+        ctx.currentTime,
+      );
       outputGainNode.gain.exponentialRampToValueAtTime(0.0001, fadeEndTime);
     } catch {}
 
@@ -266,6 +276,10 @@ export class PlaybackQueue {
   }
 
   private cancelPendingFadeOut(ctx: AudioContext, outputGainNode: GainNode): void {
+    if (this.endDrainTimer) {
+      clearTimeout(this.endDrainTimer);
+      this.endDrainTimer = null;
+    }
     if (this.stopPlaybackTimer) {
       clearTimeout(this.stopPlaybackTimer);
       this.stopPlaybackTimer = null;

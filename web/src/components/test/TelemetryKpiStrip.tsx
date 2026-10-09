@@ -103,7 +103,9 @@ export const TelemetryKpiStrip: React.FC = () => {
         </div>
         <div className="mt-1 flex items-baseline gap-2">
           <span className="text-xl font-bold font-mono text-emerald-300">{jitter.bufferedMs}</span>
-          <span className="text-xs text-slate-400 font-mono">/ 120ms</span>
+          <span className="text-xs text-slate-400 font-mono">
+            / {Math.round((jitter.targetSec || 0.04) * 1000)}ms
+          </span>
           <span
             className={`ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded border ${
               jitter.isBuffering

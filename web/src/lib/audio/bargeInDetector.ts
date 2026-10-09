@@ -71,7 +71,7 @@ export class BargeInDetector {
         return;
       }
 
-      const dynamicThreshold = Math.max(0.06, speakerRms * 0.7 + 0.04);
+      const dynamicThreshold = Math.max(0.08, speakerRms * 0.9 + 0.05);
       if (micRms > dynamicThreshold) {
         this.consecutiveSpeechFrames++;
         const base64 = resampleAndEncodePCM(inputBuffer, sampleRate, 24000);
