@@ -199,8 +199,8 @@ export function useVoiceSession() {
           onSpeechStarted: (details) => {
             const isPlaying = audioGraph.isPlaybackActive();
             const playedMs = audioGraph.getPlaybackDurationMs();
-            // 若 AI 正在播音，但在最初 350ms 内捕获到的多为本地扬声器瞬态泄漏或杂音，予以保护忽略
-            if (isPlaying && playedMs < 350) {
+            // 若 AI 正在播音，在最初 400ms 保护期内或麦克风能量较低（<0.15）时忽略，杜绝扬声器回声自打断
+            if (isPlaying && (playedMs < 400 || audioGraph.getInputLevel() < 0.15)) {
               return;
             }
             if (isPlaying) {
