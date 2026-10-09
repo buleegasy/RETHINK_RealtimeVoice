@@ -6,8 +6,13 @@ export const AUDIO_CONSTRAINTS: MediaStreamConstraints = {
   audio: {
     echoCancellation: true,
     noiseSuppression: true,
-    autoGainControl: true,
+    autoGainControl: false,
     channelCount: 1,
+    // @ts-expect-error Chromium-specific WebRTC noise suppression constraints
+    googEchoCancellation: true,
+    googAutoGainControl: false,
+    googNoiseSuppression: true,
+    googHighpassFilter: true,
   },
   video: false,
 };

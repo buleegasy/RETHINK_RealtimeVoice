@@ -93,15 +93,20 @@ export function useVoiceSession() {
       }
 
       const audioGraph = getAudioGraph();
+      audioGraph.setAiThinking(true);
       audioGraph.setOnPlaybackStateChange((isPlaying) => {
         if (isPlaying) {
           clientRef.current?.updateTurnDetection('speaking');
           setDuplexPhase('speaking');
           useTelemetryStore.getState().setDuplexPhase('speaking');
+          audioGraph.setAiThinking(false);
+          audioGraph.setAiSpeaking(true);
         } else {
           clientRef.current?.updateTurnDetection('listening');
           setDuplexPhase('listening');
           useTelemetryStore.getState().setDuplexPhase('listening');
+          audioGraph.setAiThinking(false);
+          audioGraph.setAiSpeaking(false);
         }
       });
 
@@ -115,6 +120,8 @@ export function useVoiceSession() {
         });
         setDuplexPhase('listening');
         useTelemetryStore.getState().setDuplexPhase('listening');
+        audioGraph.setAiThinking(false);
+        audioGraph.setAiSpeaking(false);
         const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
         if (asstSeg?.text) {
           addDialogueTurn({
@@ -161,6 +168,8 @@ export function useVoiceSession() {
             setDuplexPhase('listening');
             useTelemetryStore.getState().setIsConnected(true);
             useTelemetryStore.getState().setDuplexPhase('listening');
+            audioGraph.setAiThinking(false);
+            audioGraph.setAiSpeaking(false);
           },
           onClose: (code?: number, reason?: string) => {
             useTelemetryStore.getState().setIsConnected(false);
@@ -219,27 +228,31 @@ export function useVoiceSession() {
             if (audioGraph.isPlaybackActive()) {
               return;
             }
-            setDuplexPhase('speaking');
-            useTelemetryStore.getState().setDuplexPhase('speaking');
+            setDuplexPhase('listening');
+            useTelemetryStore.getState().setDuplexPhase('listening');
+            audioGraph.setAiThinking(false);
           },
           onSpeechStopped: () => {
             if (
               useBoothStore.getState().sessionStatus === 'connected' &&
-              useBoothStore.getState().duplexPhase === 'listening'
+              !audioGraph.isPlaybackActive()
             ) {
               setDuplexPhase('thinking');
               useTelemetryStore.getState().setDuplexPhase('thinking');
+              audioGraph.setAiThinking(true);
             }
           },
           onTurnStart: () => {
             if (audioGraph.isPlaybackActive()) {
               setDuplexPhase('speaking');
               useTelemetryStore.getState().setDuplexPhase('speaking');
+              audioGraph.setAiThinking(false);
+              audioGraph.setAiSpeaking(true);
             } else {
               setDuplexPhase('thinking');
               useTelemetryStore.getState().setDuplexPhase('thinking');
+              audioGraph.setAiThinking(true);
             }
-            audioGraph.setAiSpeaking(true);
           },
           onTurnEnd: () => {
             // 注意：此处为服务端 WebSocket 数据流传输完毕，客户端可能仍在平滑播放。
@@ -247,6 +260,8 @@ export function useVoiceSession() {
             if (!audioGraph.isPlaybackActive()) {
               setDuplexPhase('listening');
               useTelemetryStore.getState().setDuplexPhase('listening');
+              audioGraph.setAiThinking(false);
+              audioGraph.setAiSpeaking(false);
             }
             const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
             if (asstSeg?.text) {
@@ -473,6 +488,8 @@ export function useVoiceSession() {
     const playedMs = audioGraphRef.current ? audioGraphRef.current.getPlaybackDurationMs() : 0;
     if (audioGraphRef.current) {
       audioGraphRef.current.stopPlayback(150);
+      audioGraphRef.current.setAiThinking(false);
+      audioGraphRef.current.setAiSpeaking(false);
     }
     if (clientRef.current) {
       clientRef.current.updateTurnDetection('listening');

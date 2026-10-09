@@ -21,6 +21,7 @@ export class AudioGraphService {
   private highpassFilterNode: BiquadFilterNode | null = null;
 
   private isMuted: boolean = false;
+  private isAiThinking: boolean = false;
   private onLocalInterruptCallback: ((playedMs: number) => void) | null = null;
   private onPlaybackStateChange: ((isPlaying: boolean) => void) | null = null;
   private boundDeviceChangeListener: (() => void) | null = null;
@@ -98,6 +99,13 @@ export class AudioGraphService {
     }
   }
 
+  public setAiThinking(thinking: boolean): void {
+    this.isAiThinking = thinking;
+    if (thinking) {
+      this.bargeInDetector.reset();
+    }
+  }
+
   public async reinitInputStream(): Promise<void> {
     if (!this.audioCtx) return;
     try {
@@ -131,11 +139,11 @@ export class AudioGraphService {
 
     this.highpassFilterNode = ctx.createBiquadFilter();
     this.highpassFilterNode.type = 'highpass';
-    this.highpassFilterNode.frequency.setValueAtTime(100, ctx.currentTime);
+    this.highpassFilterNode.frequency.setValueAtTime(120, ctx.currentTime);
     this.highpassFilterNode.Q.setValueAtTime(0.7, ctx.currentTime);
 
     this.inputGainNode = ctx.createGain();
-    this.inputGainNode.gain.setValueAtTime(1.0, ctx.currentTime);
+    this.inputGainNode.gain.setValueAtTime(1.15, ctx.currentTime);
 
     this.analyserNode = ctx.createAnalyser();
     this.analyserNode.fftSize = 256;
@@ -199,7 +207,9 @@ export class AudioGraphService {
       sampleRate: ctx.sampleRate,
       isMuted: this.isMuted,
       isAiSpeakingOrActive:
-        this.playbackQueue.isAiSpeaking || this.playbackQueue.isPlaybackActive(),
+        this.isAiThinking ||
+        this.playbackQueue.isAiSpeaking ||
+        this.playbackQueue.isPlaybackActive(),
       speakerRms,
       playedMs,
       onAudioChunk,

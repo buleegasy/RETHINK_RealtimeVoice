@@ -341,20 +341,13 @@ export class RelaySessionCoordinator {
                   sidebandAgent.finalizeAssistantTurn();
                 }
               }, 450);
-            } else if (
-              payload.type === 'session.input_transcript.delta' ||
-              payload.type === 'session.input_audio.speech_started' ||
-              payload.type === 'input_audio_buffer.speech_started'
-            ) {
+            } else if (payload.type === 'session.output_audio.done') {
               if (assistantSilenceTimer) {
                 clearTimeout(assistantSilenceTimer);
                 assistantSilenceTimer = null;
               }
               if (isAssistantSpeaking) {
                 isAssistantSpeaking = false;
-                if (serverWs.readyState === WebSocket.OPEN) {
-                  serverWs.send(JSON.stringify({ type: 'response.done' }));
-                }
                 sidebandAgent.finalizeAssistantTurn();
               }
             }
