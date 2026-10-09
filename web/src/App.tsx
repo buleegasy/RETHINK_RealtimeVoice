@@ -16,6 +16,12 @@ const AdminPortal = lazy(() =>
   })),
 );
 
+const TestWorkbench = lazy(() =>
+  import('./components/test/TestWorkbench').then((m) => ({
+    default: m.TestWorkbench,
+  })),
+);
+
 export function App() {
   const runMode = useModeStore((s) => s.runMode);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -25,9 +31,9 @@ export function App() {
   const hookState = useBoothStore((s) => s.hookState);
   const { startCall, endCall, interrupt, toggleMute } = useVoiceSession();
 
-  // 1. 电话亭物理按键 (Space/Enter/Esc/M) 与挂摘机硬件交互（仅在非教师后台模式启用）
+  // 1. 电话亭物理按键 (Space/Enter/Esc/M) 与挂摘机硬件交互（仅在常规体验模式启用）
   useTelephoneBooth({
-    enabled: runMode !== 'admin',
+    enabled: runMode === 'web' || runMode === 'kiosk',
     onPickUp: startCall,
     onHangUp: endCall,
     onInterrupt: interrupt,
@@ -43,17 +49,22 @@ export function App() {
   });
 
   useEffect(() => {
-    if (runMode !== 'kiosk') {
+    if (runMode !== 'kiosk' && runMode !== 'test') {
       hasAutoLoggedInRef.current = false;
     }
   }, [runMode]);
 
   useEffect(() => {
-    if (runMode === 'kiosk' && !isAuthenticated && !hasAutoLoggedInRef.current) {
+    if (
+      (runMode === 'kiosk' || runMode === 'test') &&
+      !isAuthenticated &&
+      !hasAutoLoggedInRef.current
+    ) {
       hasAutoLoggedInRef.current = true;
+      const deviceId = runMode === 'test' ? 'telemetry-test-bench' : 'kiosk-booth-01';
       void apiFetch('/api/auth/kiosk-login', {
         method: 'POST',
-        body: JSON.stringify({ deviceId: 'kiosk-booth-01' }),
+        body: JSON.stringify({ deviceId }),
       })
         .then((res) => res.json())
         .then((data) => {
@@ -62,7 +73,7 @@ export function App() {
           }
         })
         .catch((err) => {
-          console.warn('[App] Kiosk 终端自动免密鉴权异常:', err);
+          console.warn('[App] 自动免密鉴权异常:', err);
         });
     }
   }, [runMode, isAuthenticated, login]);
@@ -82,6 +93,21 @@ export function App() {
             }
           >
             <AdminPortal />
+          </Suspense>
+        </ErrorBoundary>
+      ) : runMode === 'test' ? (
+        <ErrorBoundary fallbackTitle="遥测测试工作台载入遇到异常">
+          <Suspense
+            fallback={
+              <div className="flex h-screen w-screen items-center justify-center bg-[#0B0F19] text-slate-400 text-xs">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-7 h-7 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                  <span>正在加载影子大脑遥测控制台...</span>
+                </div>
+              </div>
+            }
+          >
+            <TestWorkbench />
           </Suspense>
         </ErrorBoundary>
       ) : !isAuthenticated ? (

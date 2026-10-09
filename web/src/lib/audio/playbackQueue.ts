@@ -39,6 +39,26 @@ export class PlaybackQueue {
     return this.isSpeaking || this.scheduledSources.length > 0 || this.jitterBuffer.length > 0;
   }
 
+  public getJitterMetrics(): {
+    bufferedSec: number;
+    bufferedMs: number;
+    isBuffering: boolean;
+    queuedBuffers: number;
+    scheduledCount: number;
+    targetSec: number;
+    rebufferSec: number;
+  } {
+    return {
+      bufferedSec: Number(this.jitterBufferedSec.toFixed(3)),
+      bufferedMs: Math.round(this.jitterBufferedSec * 1000),
+      isBuffering: this.isJitterBuffering,
+      queuedBuffers: this.jitterBuffer.length,
+      scheduledCount: this.scheduledSources.length,
+      targetSec: this.JITTER_TARGET_SEC,
+      rebufferSec: this.JITTER_REBUFFER_SEC,
+    };
+  }
+
   public getPlaybackDurationMs(ctx: AudioContext | null): number {
     if (!ctx || this.playbackStartCtxTime === null) return 0;
     const now = ctx.currentTime;

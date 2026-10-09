@@ -47,6 +47,7 @@ export class MiniMaxRealtimeClient {
   private playbackEpoch: number = 0;
   private readonly canceledResponseItemIds: Set<string> = new Set();
   private currentTurnDetectionMode: 'speaking' | 'listening' | null = null;
+  private speechStopTime: number = 0;
 
   constructor(options?: MiniMaxClientOptions) {
     this.options = options || {};
@@ -92,9 +93,6 @@ export class MiniMaxRealtimeClient {
         console.log('[MiniMaxClient] 实时语音链路已建立');
         this.isConnected = true;
         const isReconnection = this.reconnectAttempts > 0;
-        this.reconnectAttempts = 0;
-        this.startKeepalive();
-
         this.flushQueue();
         this.sendSessionUpdate();
 
@@ -103,6 +101,7 @@ export class MiniMaxRealtimeClient {
           this.sendGreeting();
         }
 
+        this.startKeepalive();
         this.callbacks.onOpen?.();
       };
 
@@ -354,6 +353,11 @@ export class MiniMaxRealtimeClient {
           // 物理丢弃在途到达的幽灵音频分片，杜绝打断后多说半句
           return;
         }
+        if (this.speechStopTime > 0) {
+          const ttft = Date.now() - this.speechStopTime;
+          this.speechStopTime = 0;
+          this.callbacks.onTTFT?.(ttft);
+        }
         const audio = event.delta || event.audio;
         if (audio) {
           this.callbacks.onAudioDelta?.(audio);
@@ -392,6 +396,7 @@ export class MiniMaxRealtimeClient {
       }
 
       if (type === 'input_audio_buffer.speech_stopped') {
+        this.speechStopTime = Date.now();
         this.callbacks.onSpeechStopped?.();
       }
 
@@ -455,6 +460,40 @@ export class MiniMaxRealtimeClient {
         this.callbacks.onCrisisInterception?.({ message: msg, tier });
       }
 
+      if (type === 'rethink.telemetry.shadow_directive') {
+        this.callbacks.onShadowDirective?.({
+          turnSequence: Number((event as any).turnSequence || 0),
+          userText: String((event as any).userText || ''),
+          cognitiveHint:
+            typeof (event as any).cognitiveHint === 'string' ? (event as any).cognitiveHint : null,
+          durationMs: Number((event as any).durationMs || 0),
+          fallback: Boolean((event as any).fallback),
+          timestamp: Number((event as any).timestamp || Date.now()),
+        });
+      }
+
+      if (type === 'rethink.telemetry.safety_check') {
+        this.callbacks.onSafetyCheck?.({
+          turnSequence: Number((event as any).turnSequence || 0),
+          isCrisis: Boolean((event as any).isCrisis),
+          durationMs: Number((event as any).durationMs || 0),
+          timestamp: Number((event as any).timestamp || Date.now()),
+        });
+      }
+
+      if (type === 'server.pong') {
+        if (this.pongTimeoutTimer) {
+          clearTimeout(this.pongTimeoutTimer);
+          this.pongTimeoutTimer = null;
+        }
+        const sentTime = Number((event as any).clientTimestamp || 0);
+        if (sentTime > 0) {
+          const rtt = Math.max(1, Date.now() - sentTime);
+          this.callbacks.onPingPong?.(rtt);
+        }
+        return;
+      }
+
       if (type === 'error') {
         const errCode = event.error?.code;
         if (errCode === 'response_cancel_not_allowed') {
@@ -485,9 +524,16 @@ export class MiniMaxRealtimeClient {
   private startKeepalive(): void {
     this.stopKeepalive();
 
+    // 握手就绪后延迟 500ms 发送首个 Ping，确保握手协议帧（session.update / greeting）严格先行
+    setTimeout(() => {
+      if (this.ready) {
+        this.send({ type: 'client.ping', timestamp: Date.now() });
+      }
+    }, 500);
+
     this.keepaliveTimer = setInterval(() => {
       if (this.ready) {
-        this.send({ type: 'client.ping' });
+        this.send({ type: 'client.ping', timestamp: Date.now() });
         if (this.pongTimeoutTimer) {
           clearTimeout(this.pongTimeoutTimer);
         }
@@ -497,7 +543,7 @@ export class MiniMaxRealtimeClient {
           this.scheduleReconnect();
         }, 10000);
       }
-    }, 30000);
+    }, 4000);
   }
 
   private stopKeepalive(): void {

@@ -12,10 +12,7 @@ interface VoiceViewProps {
   onInterrupt: () => void;
 }
 
-export const VoiceView: React.FC<VoiceViewProps> = ({
-  onStartCall,
-  onEndCall,
-}) => {
+export const VoiceView: React.FC<VoiceViewProps> = ({ onStartCall, onEndCall }) => {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const runMode = useModeStore((s) => s.runMode);
@@ -60,6 +57,15 @@ export const VoiceView: React.FC<VoiceViewProps> = ({
           RETHINK
         </h1>
         <div className="flex items-center gap-4 text-xs font-mono">
+          <button
+            type="button"
+            onClick={() => setRunMode('test')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-black/15 text-black/70 hover:text-black hover:border-black/30 hover:bg-black/5 transition-all text-xs font-mono cursor-pointer"
+            title="打开影子大脑与实时遥测测试台"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>遥测控制台</span>
+          </button>
           <span className="text-black/60">{user?.displayName || user?.userName}</span>
           <button
             type="button"

@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { useBoothStore } from '../store/boothStore';
 import { useAuthStore } from '../store/authStore';
+import { useTelemetryStore } from '../store/telemetryStore';
 import { MiniMaxRealtimeClient } from '../lib/minimax/client';
 import { RealtimeToolDispatcher } from '../lib/tools/toolDispatcher';
 import { DefaultRagProvider } from '../lib/pipelines/rag/defaultRagProvider';
@@ -50,6 +51,7 @@ export function useVoiceSession() {
   );
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const telemetryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string>('');
   const endCallRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -58,6 +60,10 @@ export function useVoiceSession() {
     setHookState('connected');
     setSessionStatus('connecting');
     setDuplexPhase('thinking');
+
+    useTelemetryStore.getState().clearTelemetry();
+    useTelemetryStore.getState().setCbtStage(useBoothStore.getState().cbtStage);
+    useTelemetryStore.getState().setDuplexPhase('thinking');
 
     sessionIdRef.current = safeRandomId('kiosk');
     transcriptionRef.current.reset();
@@ -68,13 +74,16 @@ export function useVoiceSession() {
         if (isPlaying) {
           clientRef.current?.updateTurnDetection('speaking');
           setDuplexPhase('speaking');
+          useTelemetryStore.getState().setDuplexPhase('speaking');
         } else {
           clientRef.current?.updateTurnDetection('listening');
           setDuplexPhase('listening');
+          useTelemetryStore.getState().setDuplexPhase('listening');
         }
       });
 
       audioGraph.setOnLocalInterrupt((playedMs) => {
+        useTelemetryStore.getState().incrementBargeIns();
         clientRef.current?.updateTurnDetection('listening');
         const itemId = clientRef.current?.getCurrentResponseItemId();
         clientRef.current?.interrupt({
@@ -82,6 +91,7 @@ export function useVoiceSession() {
           audioEndMs: playedMs,
         });
         setDuplexPhase('listening');
+        useTelemetryStore.getState().setDuplexPhase('listening');
         const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
         if (asstSeg?.text) {
           addDialogueTurn({
@@ -91,6 +101,11 @@ export function useVoiceSession() {
             timestamp: asstSeg.timestamp,
             stage: useBoothStore.getState().cbtStage,
           });
+          useTelemetryStore.getState().appendFinalTranscript({
+            role: 'assistant',
+            text: asstSeg.text,
+            timestamp: asstSeg.timestamp,
+          });
         }
       });
 
@@ -98,9 +113,11 @@ export function useVoiceSession() {
         ragProvider: ragProviderRef.current,
         onStageChange: (nextStage) => {
           setCBTStage(nextStage);
+          useTelemetryStore.getState().setCbtStage(nextStage);
         },
         onCrisisEscalate: (_sev, _text) => {
           setCBTStage('Crisis_Escalation');
+          useTelemetryStore.getState().setCbtStage('Crisis_Escalation');
           setCrisisOverlayOpen(true);
         },
         onSaveUserInfo: (name) => {
@@ -118,8 +135,12 @@ export function useVoiceSession() {
             setSessionStatus('connected');
             setHookState('connected');
             setDuplexPhase('listening');
+            useTelemetryStore.getState().setIsConnected(true);
+            useTelemetryStore.getState().setDuplexPhase('listening');
           },
           onClose: () => {
+            useTelemetryStore.getState().setIsConnected(false);
+            useTelemetryStore.getState().setDuplexPhase('idle');
             if (useBoothStore.getState().sessionStatus === 'connected') {
               endCallRef.current?.();
             } else if (useBoothStore.getState().sessionStatus === 'connecting') {
@@ -134,14 +155,18 @@ export function useVoiceSession() {
           },
           onAudioDelta: (chunk) => {
             audioGraph.enqueueAudioChunk(chunk);
+            useTelemetryStore.getState().incrementAudioChunks();
           },
           onTextDelta: (text) => {
             transcriptionRef.current.feedDelta('assistant', text);
+            useTelemetryStore.getState().setStreamingAssistantText(text);
           },
           onTranscriptDelta: (transcript) => {
             transcriptionRef.current.feedDelta('user', transcript);
+            useTelemetryStore.getState().setStreamingUserText(transcript);
           },
           onSpeechStarted: (details) => {
+            useTelemetryStore.getState().incrementBargeIns();
             const playedMs = audioGraph.getPlaybackDurationMs();
             if (audioGraph.isPlaybackActive() && playedMs < 250) {
               return;
@@ -154,6 +179,7 @@ export function useVoiceSession() {
               audioEndMs: playedMs,
             });
             setDuplexPhase('listening');
+            useTelemetryStore.getState().setDuplexPhase('listening');
             const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
             if (asstSeg?.text) {
               addDialogueTurn({
@@ -163,6 +189,11 @@ export function useVoiceSession() {
                 timestamp: asstSeg.timestamp,
                 stage: useBoothStore.getState().cbtStage,
               });
+              useTelemetryStore.getState().appendFinalTranscript({
+                role: 'assistant',
+                text: asstSeg.text,
+                timestamp: asstSeg.timestamp,
+              });
             }
           },
           onSpeechStopped: () => {
@@ -171,13 +202,16 @@ export function useVoiceSession() {
               useBoothStore.getState().duplexPhase === 'listening'
             ) {
               setDuplexPhase('thinking');
+              useTelemetryStore.getState().setDuplexPhase('thinking');
             }
           },
           onTurnStart: () => {
             if (audioGraph.isPlaybackActive()) {
               setDuplexPhase('speaking');
+              useTelemetryStore.getState().setDuplexPhase('speaking');
             } else {
               setDuplexPhase('thinking');
+              useTelemetryStore.getState().setDuplexPhase('thinking');
             }
             audioGraph.setAiSpeaking(true);
             clientRef.current?.updateTurnDetection('speaking');
@@ -186,6 +220,7 @@ export function useVoiceSession() {
             audioGraph.setAiSpeaking(false);
             clientRef.current?.updateTurnDetection('listening');
             setDuplexPhase('listening');
+            useTelemetryStore.getState().setDuplexPhase('listening');
             const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
             if (asstSeg?.text) {
               addDialogueTurn({
@@ -194,6 +229,11 @@ export function useVoiceSession() {
                 content: asstSeg.text,
                 timestamp: asstSeg.timestamp,
                 stage: useBoothStore.getState().cbtStage,
+              });
+              useTelemetryStore.getState().appendFinalTranscript({
+                role: 'assistant',
+                text: asstSeg.text,
+                timestamp: asstSeg.timestamp,
               });
             }
             const userSeg = transcriptionRef.current.finalizeCurrentTurn('user');
@@ -206,10 +246,16 @@ export function useVoiceSession() {
                 timestamp: userSeg.timestamp,
                 stage: currentStage,
               });
+              useTelemetryStore.getState().appendFinalTranscript({
+                role: 'user',
+                text: userSeg.text,
+                timestamp: userSeg.timestamp,
+              });
               if (toolDispatcherRef.current) {
                 const pacing = toolDispatcherRef.current.getFsm().recordTurn('user');
                 if (pacing.autoPromotedStage) {
                   setCBTStage(pacing.autoPromotedStage);
+                  useTelemetryStore.getState().setCbtStage(pacing.autoPromotedStage);
                 }
               }
             }
@@ -224,6 +270,7 @@ export function useVoiceSession() {
             audioGraph.stopRecording();
             toolDispatcherRef.current?.getFsm().escalateCrisis(details.message);
             setCBTStage('Crisis_Escalation');
+            useTelemetryStore.getState().setCbtStage('Crisis_Escalation');
             setCrisisOverlayOpen(true);
             addDialogueTurn({
               id: `turn_${Date.now()}`,
@@ -232,6 +279,18 @@ export function useVoiceSession() {
               timestamp: Date.now(),
               stage: 'Crisis_Escalation',
             });
+          },
+          onShadowDirective: (directive) => {
+            useTelemetryStore.getState().addShadowDirective(directive);
+          },
+          onSafetyCheck: (check) => {
+            useTelemetryStore.getState().setSafetyCheck(check);
+          },
+          onPingPong: (rttMs) => {
+            useTelemetryStore.getState().updateRtt(rttMs);
+          },
+          onTTFT: (ttftMs) => {
+            useTelemetryStore.getState().updateTtft(ttftMs);
           },
         },
       });
@@ -250,6 +309,17 @@ export function useVoiceSession() {
       timerRef.current = setInterval(() => {
         setCallDuration((prev) => prev + 1);
       }, 1000);
+
+      if (telemetryTimerRef.current) clearInterval(telemetryTimerRef.current);
+      telemetryTimerRef.current = setInterval(() => {
+        if (audioGraphRef.current) {
+          const metrics = audioGraphRef.current.getJitterMetrics();
+          const inLvl = audioGraphRef.current.getInputLevel();
+          const outLvl = audioGraphRef.current.getOutputLevel();
+          useTelemetryStore.getState().updateJitterMetrics(metrics);
+          useTelemetryStore.getState().updateAudioLevels(inLvl, outLvl);
+        }
+      }, 100);
     } catch (err: any) {
       console.error('[VoiceSession] 启动失败:', err);
       setErrorMessage(err?.message || '麦克风设备授权或初始化失败');
@@ -277,6 +347,13 @@ export function useVoiceSession() {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (telemetryTimerRef.current) {
+      clearInterval(telemetryTimerRef.current);
+      telemetryTimerRef.current = null;
+    }
+    useTelemetryStore.getState().setIsConnected(false);
+    useTelemetryStore.getState().setDuplexPhase('idle');
+
     stopVisualizer();
 
     cleanupAudio();
@@ -299,6 +376,11 @@ export function useVoiceSession() {
         timestamp: asstSeg.timestamp,
         stage: useBoothStore.getState().cbtStage,
       });
+      useTelemetryStore.getState().appendFinalTranscript({
+        role: 'assistant',
+        text: asstSeg.text,
+        timestamp: asstSeg.timestamp,
+      });
     }
     const userSeg = transcriptionRef.current.finalizeCurrentTurn('user');
     if (userSeg?.text) {
@@ -308,6 +390,11 @@ export function useVoiceSession() {
         content: userSeg.text,
         timestamp: userSeg.timestamp,
         stage: useBoothStore.getState().cbtStage,
+      });
+      useTelemetryStore.getState().appendFinalTranscript({
+        role: 'user',
+        text: userSeg.text,
+        timestamp: userSeg.timestamp,
       });
     }
 
@@ -340,6 +427,7 @@ export function useVoiceSession() {
   endCallRef.current = endCall;
 
   const interrupt = useCallback(() => {
+    useTelemetryStore.getState().incrementBargeIns();
     const playedMs = audioGraphRef.current ? audioGraphRef.current.getPlaybackDurationMs() : 0;
     if (audioGraphRef.current) {
       audioGraphRef.current.stopPlayback(150);
@@ -353,6 +441,7 @@ export function useVoiceSession() {
       });
     }
     setDuplexPhase('listening');
+    useTelemetryStore.getState().setDuplexPhase('listening');
     const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
     if (asstSeg?.text) {
       addDialogueTurn({
@@ -361,6 +450,11 @@ export function useVoiceSession() {
         content: asstSeg.text,
         timestamp: asstSeg.timestamp,
         stage: useBoothStore.getState().cbtStage,
+      });
+      useTelemetryStore.getState().appendFinalTranscript({
+        role: 'assistant',
+        text: asstSeg.text,
+        timestamp: asstSeg.timestamp,
       });
     }
   }, [audioGraphRef, setDuplexPhase, addDialogueTurn]);
@@ -385,6 +479,7 @@ export function useVoiceSession() {
         window.removeEventListener('rethink:crisis:end_call', handleCrisisEndCall);
       }
       if (timerRef.current) clearInterval(timerRef.current);
+      if (telemetryTimerRef.current) clearInterval(telemetryTimerRef.current);
       stopVisualizer();
       cleanupAudio();
       if (clientRef.current) clientRef.current.disconnect();

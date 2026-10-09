@@ -87,6 +87,10 @@ export class AudioGraphService {
     return this.playbackQueue.isPlaybackActive();
   }
 
+  public getJitterMetrics() {
+    return this.playbackQueue.getJitterMetrics();
+  }
+
   public setAiSpeaking(speaking: boolean): void {
     this.playbackQueue.setAiSpeaking(speaking);
     if (!speaking) {
@@ -327,6 +331,24 @@ export class AudioGraphService {
     if (!this.analyserNode || this.isMuted) return 0;
     const dataArray = new Uint8Array(this.analyserNode.frequencyBinCount);
     this.analyserNode.getByteTimeDomainData(dataArray);
+
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      const v = (dataArray[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / dataArray.length);
+    return Math.min(1, rms * 4);
+  }
+
+  public getInputLevel(): number {
+    return this.getAudioLevel();
+  }
+
+  public getOutputLevel(): number {
+    if (!this.speakerAnalyserNode) return 0;
+    const dataArray = new Uint8Array(this.speakerAnalyserNode.frequencyBinCount);
+    this.speakerAnalyserNode.getByteTimeDomainData(dataArray);
 
     let sum = 0;
     for (let i = 0; i < dataArray.length; i++) {

@@ -45,6 +45,10 @@ const detectInitialMode = (): { mode: AppRunMode; deviceId: string } => {
     return { mode: 'admin', deviceId: 'kiosk-booth-01' };
   }
 
+  if (modeParam === 'test' || modeParam === 'debug' || modeParam === 'telemetry') {
+    return { mode: 'test', deviceId: 'telemetry-test-bench' };
+  }
+
   if (modeParam === 'kiosk' || deviceParam) {
     return {
       mode: 'kiosk',
@@ -70,7 +74,9 @@ const detectInitialMode = (): { mode: AppRunMode; deviceId: string } => {
   }
 
   let effectiveMode: AppRunMode = 'web';
-  if (storedMode === 'kiosk' && hasAuthToken) {
+  if (storedMode === 'test') {
+    effectiveMode = 'test';
+  } else if (storedMode === 'kiosk' && hasAuthToken) {
     effectiveMode = 'kiosk';
   }
 

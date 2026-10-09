@@ -177,6 +177,19 @@ export class RelaySessionCoordinator {
         payload = JSON.parse(raw);
       } catch {}
 
+      if (payload?.type === 'client.ping') {
+        if (serverWs.readyState === WebSocket.OPEN) {
+          serverWs.send(
+            JSON.stringify({
+              type: 'server.pong',
+              clientTimestamp: payload.timestamp,
+              serverTime: Date.now(),
+            }),
+          );
+        }
+        return;
+      }
+
       if (payload?.type === 'response.cancel') {
         coordinator.interrupt();
       }
@@ -322,12 +335,24 @@ export class RelaySessionCoordinator {
           }
 
           // 2. L2 异步语义旁路熔断（采用 OpenRouter Jev 决策模型，配置独立 5000ms 超时）
+          const safetyStartTime = Date.now();
           checkL2FlashSafety(userText, {
             apiKey: openRouterConfig.openRouterKey,
             baseUrl: openRouterConfig.openRouterBaseUrl,
             signal: AbortSignal.timeout(5000),
           })
             .then((isCrisis) => {
+              if (serverWs.readyState === WebSocket.OPEN) {
+                serverWs.send(
+                  JSON.stringify({
+                    type: 'rethink.telemetry.safety_check',
+                    turnSequence: currentSeq,
+                    isCrisis,
+                    durationMs: Date.now() - safetyStartTime,
+                    timestamp: Date.now(),
+                  }),
+                );
+              }
               if (isCrisis && !crisisHandler.isTriggered) {
                 coordinator.interrupt();
                 crisisHandler.triggerIntervention('L2', 'L2 DeepSeek V4 Flash语义熔断命中危机', [
@@ -338,9 +363,10 @@ export class RelaySessionCoordinator {
             })
             .catch(() => {});
 
-          // 3. 影子大脑认知指导与单点响应协调 (1200ms 超时熔断降级)
+          // 3. 影子大脑认知指导与单点响应协调 (800ms 超时熔断降级)
           this.coordinateShadowTurn({
             shadowPipeline,
+            serverWs,
             upstreamWs,
             coordinator,
             currentSeq,
@@ -364,6 +390,7 @@ export class RelaySessionCoordinator {
 
   private static coordinateShadowTurn(params: {
     shadowPipeline: ShadowReasoningPipeline;
+    serverWs?: WebSocket;
     upstreamWs: WebSocket;
     coordinator: BargeInCoordinator;
     currentSeq: number;
@@ -377,6 +404,7 @@ export class RelaySessionCoordinator {
   }): void {
     const {
       shadowPipeline,
+      serverWs,
       upstreamWs,
       coordinator,
       currentSeq,
@@ -391,6 +419,7 @@ export class RelaySessionCoordinator {
 
     let hasResponded = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const shadowStartTime = Date.now();
 
     const timeoutPromise = new Promise<null>((resolve) => {
       timer = setTimeout(() => {
@@ -424,6 +453,22 @@ export class RelaySessionCoordinator {
       if (timer) clearTimeout(timer);
       if (hasResponded) return;
       hasResponded = true;
+      const durationMs = Date.now() - shadowStartTime;
+
+      if (serverWs && serverWs.readyState === WebSocket.OPEN) {
+        serverWs.send(
+          JSON.stringify({
+            type: 'rethink.telemetry.shadow_directive',
+            turnSequence: currentSeq,
+            userText,
+            cognitiveHint: hint,
+            durationMs,
+            fallback: !hint,
+            timestamp: Date.now(),
+          }),
+        );
+      }
+
       this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, hint);
     });
   }

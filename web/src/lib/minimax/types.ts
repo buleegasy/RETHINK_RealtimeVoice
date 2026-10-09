@@ -62,4 +62,20 @@ export interface MiniMaxClientCallbacks {
   onItemTruncated?: (details: { itemId?: string; audioEndMs?: number }) => void;
   onToolCall?: (toolCall: { name: string; callId: string; args: Record<string, unknown> }) => void;
   onCrisisInterception?: (details: { message: string; tier?: string }) => void;
+  onShadowDirective?: (data: {
+    turnSequence: number;
+    userText: string;
+    cognitiveHint: string | null;
+    durationMs: number;
+    fallback: boolean;
+    timestamp: number;
+  }) => void;
+  onSafetyCheck?: (data: {
+    turnSequence: number;
+    isCrisis: boolean;
+    durationMs: number;
+    timestamp: number;
+  }) => void;
+  onPingPong?: (rttMs: number) => void;
+  onTTFT?: (ttftMs: number) => void;
 }

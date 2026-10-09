@@ -5,18 +5,13 @@ export type CBTStage =
   | 'Socratic_Questioning'
   | 'Crisis_Escalation';
 
-export type BoothHookState =
-  | 'on_hook'
-  | 'off_hook'
-  | 'dialing'
-  | 'connected'
-  | 'ended';
+export type BoothHookState = 'on_hook' | 'off_hook' | 'dialing' | 'connected' | 'ended';
 
 export type DuplexPhase = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 export type VoiceSessionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
-export type AppRunMode = 'web' | 'kiosk' | 'admin';
+export type AppRunMode = 'web' | 'kiosk' | 'admin' | 'test';
 
 export type DispositionStatus = 'pending_contact' | 'intervened' | 'closed';
 
