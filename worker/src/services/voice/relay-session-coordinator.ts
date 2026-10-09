@@ -124,6 +124,7 @@ export class RelaySessionCoordinator {
         coordinator,
         currentMemory,
         isDirectLive,
+        upstreamModel: config.upstreamModel,
         isSessionReady: () => isSessionReady,
       });
 
@@ -185,10 +186,18 @@ export class RelaySessionCoordinator {
     coordinator: BargeInCoordinator;
     currentMemory: any;
     isDirectLive: boolean;
+    upstreamModel?: string;
     isSessionReady: () => boolean;
   }): { flushEarlyQueue: () => void } {
-    const { serverWs, upstreamWs, coordinator, currentMemory, isDirectLive, isSessionReady } =
-      params;
+    const {
+      serverWs,
+      upstreamWs,
+      coordinator,
+      currentMemory,
+      isDirectLive,
+      upstreamModel,
+      isSessionReady,
+    } = params;
     const earlyMessageQueue: any[] = [];
     const MAX_EARLY_QUEUE_SIZE = 100;
 
@@ -220,7 +229,10 @@ export class RelaySessionCoordinator {
           payload.session,
           currentMemory,
         );
-        const upstreamSession = RealtimeGatewayAdapter.buildUpstreamSessionPayload(cleanSession);
+        const upstreamSession = RealtimeGatewayAdapter.buildUpstreamSessionPayload(
+          cleanSession,
+          upstreamModel,
+        );
         upstreamWs.send(
           JSON.stringify({
             type: 'session.update',

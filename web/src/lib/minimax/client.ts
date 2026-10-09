@@ -252,7 +252,7 @@ export class MiniMaxRealtimeClient {
       type: 'conversation.item.truncate',
       item_id: itemId,
       content_index: contentIndex,
-      audio_end_ms: Math.max(0, audioEndMs),
+      audio_end_ms: Math.round(Math.max(0, audioEndMs)),
     });
   }
 

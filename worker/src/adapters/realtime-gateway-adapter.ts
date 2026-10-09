@@ -122,7 +122,10 @@ export class RealtimeGatewayAdapter {
     '2. 聚焦倾诉：专注倾听与安抚高中生心事与情绪，尽量避免讨论无关内容。\n' +
     '3. 自然口语：全程使用贴近高中生的自然口语交流，禁止说你的模型名及公司名，禁止任何英文。\n' +
     '4. 绝对极简（极其重要）：这是全双工实时通话，每次回复必须极其简短精炼，严格控制在 1 到 2 句话以内（30字以内）！语速稍快、轻快利落，共情或回应后立刻闭嘴倾听，把话语权交给同学。绝对严禁长篇大论、严禁列点清单、严禁说教、严禁一次性抛出长篇建议！\n' +
-    '5. 危机安全：当同学表达自杀、自残意念或危及生命安全时，以极度温和关切的态度稳住情绪，不可刺激或评判。';
+    '5. 纯语音输出规范：严禁输出任何 Markdown 格式符号（如加粗、列表、标题符号）、严禁输出 Emoji 表情或代码块，确保语音合成平滑自然。\n' +
+    '6. 嘈杂环境与弱信号应对：若因环境嘈杂或同学声音微弱导致没听清，用极简日常口语温和确认（如“刚才没太听清，可以再说一遍吗？”），绝不凭空臆测。\n' +
+    '7. 单轮单问：每轮至多提一个简短关切或开放式问题，绝不连续提问。\n' +
+    '8. 危机安全：当同学表达自杀、自残意念或危及生命安全时，以极度温和关切的态度稳住情绪，不可刺激或评判。';
 
   /**
    * 构造适配 Live 协议规范的 session.start 启动帧
@@ -159,6 +162,7 @@ export class RealtimeGatewayAdapter {
 
   /**
    * 规范化并清洗客户端传入的 session.update 载荷，动态注入历史记忆档案
+   * 全面遵循标准 OpenAI Realtime API Session Object Schema 规范
    */
   public static normalizeSessionUpdatePayload(
     incoming: any,
@@ -178,6 +182,9 @@ export class RealtimeGatewayAdapter {
       );
     }
 
+    const voice = incoming.voice || incoming.audio?.output?.voice || 'marin';
+    cleanSession.voice = voice;
+
     if (incoming.output_modalities) {
       cleanSession.output_modalities = incoming.output_modalities;
     } else if (incoming.modalities) {
@@ -185,6 +192,14 @@ export class RealtimeGatewayAdapter {
         (m: string) => m === 'audio' || m === 'text',
       );
     }
+    cleanSession.modalities = incoming.modalities ||
+      cleanSession.output_modalities || ['text', 'audio'];
+
+    cleanSession.input_audio_format = incoming.input_audio_format || 'pcm16';
+    cleanSession.output_audio_format = incoming.output_audio_format || 'pcm16';
+    cleanSession.input_audio_transcription = incoming.input_audio_transcription || {
+      model: atob('d2hpc3Blci0x'),
+    };
 
     const turnDetection = this.resolveTurnDetection(incoming);
     if (turnDetection !== undefined) {
@@ -203,8 +218,6 @@ export class RealtimeGatewayAdapter {
             interrupt_response: false,
           };
 
-    const voice = incoming.voice || incoming.audio?.output?.voice || 'marin';
-
     cleanSession.audio = {
       input: {
         format: { type: 'audio/pcm', rate: 24000 },
@@ -217,9 +230,9 @@ export class RealtimeGatewayAdapter {
       },
     };
 
-    if (incoming.max_output_tokens !== undefined) {
-      cleanSession.max_output_tokens = incoming.max_output_tokens;
-    }
+    const maxTokens = incoming.max_response_output_tokens ?? incoming.max_output_tokens ?? 512;
+    cleanSession.max_output_tokens = maxTokens;
+    cleanSession.max_response_output_tokens = maxTokens;
 
     if (incoming.tools !== undefined) cleanSession.tools = incoming.tools;
     if (incoming.tool_choice !== undefined) cleanSession.tool_choice = incoming.tool_choice;
@@ -230,14 +243,19 @@ export class RealtimeGatewayAdapter {
 
   /**
    * 构造适配底层网关协议规范的 upstream session 载荷
-   * 移除顶层 turn_detection / input_audio_transcription 避免上游网关报错 unknown_parameter
+   * 遵循 OpenAI 官方实践：移除内部保留字段 type，若连接 MiniMax 特殊网关则剔除不兼容顶层字段
    */
   public static buildUpstreamSessionPayload(
     cleanSession: Record<string, unknown>,
+    upstreamModel?: string,
   ): Record<string, unknown> {
     const upstreamPayload = { ...cleanSession };
-    delete upstreamPayload.turn_detection;
-    delete upstreamPayload.input_audio_transcription;
+    delete upstreamPayload.type;
+    const isMiniMax = upstreamModel?.toLowerCase().includes('minimax');
+    if (isMiniMax) {
+      delete upstreamPayload.turn_detection;
+      delete upstreamPayload.input_audio_transcription;
+    }
     return upstreamPayload;
   }
 
