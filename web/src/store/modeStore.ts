@@ -60,10 +60,17 @@ const detectInitialMode = (): { mode: AppRunMode; deviceId: string } => {
   const storedDevice = safeGetItem('rethink_kiosk_device') || 'kiosk-booth-01';
   const hasAuthToken = !!safeGetItem('rethink_auth_token');
 
-  let effectiveMode: AppRunMode = 'web';
+  // 严禁将 admin 作为进入网页的持久化恢复模式，确保每次进入网页都是终端而不是后台面板
   if (storedMode === 'admin') {
-    effectiveMode = 'admin';
-  } else if (storedMode === 'kiosk' && hasAuthToken) {
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
+        localStorage.removeItem('rethink_run_mode');
+      }
+    } catch {}
+  }
+
+  let effectiveMode: AppRunMode = 'web';
+  if (storedMode === 'kiosk' && hasAuthToken) {
     effectiveMode = 'kiosk';
   }
 

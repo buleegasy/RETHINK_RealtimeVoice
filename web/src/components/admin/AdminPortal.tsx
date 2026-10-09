@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldAlert, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { ShieldAlert, ArrowRight, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { useAdminStore } from '../../store/adminStore';
+import { useModeStore } from '../../store/modeStore';
 import { AdminNavbar } from './AdminNavbar';
 import { CrisisAlertBanner } from './CrisisAlertBanner';
 import { CampusPulseDashboard } from './CampusPulseDashboard';
@@ -113,6 +114,30 @@ export const AdminPortal: React.FC = () => {
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </form>
+
+          <div className="pt-2 text-center border-t border-[#c4c7c5]/40">
+            <button
+              type="button"
+              onClick={() => {
+                useModeStore.getState().setRunMode('web');
+                try {
+                  if (typeof window !== 'undefined' && window.history?.replaceState) {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('mode');
+                    window.history.replaceState(
+                      {},
+                      '',
+                      url.pathname + (url.search ? url.search : ''),
+                    );
+                  }
+                } catch {}
+              }}
+              className="text-xs text-[#747775] hover:text-[#004a77] transition-colors cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>返回前台咨询终端</span>
+            </button>
+          </div>
         </div>
       </div>
     );

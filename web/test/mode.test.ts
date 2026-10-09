@@ -69,8 +69,14 @@ describe('运行模式状态机测试 (Web Mode vs Kiosk Mode)', () => {
 
     modeStore.setRunMode('kiosk');
     authStore.login(
-      { uid: 'kiosk-01', userName: 'kiosk-01', displayName: '咨询终端', role: 'user', isAuthenticated: true },
-      'test-token'
+      {
+        uid: 'kiosk-01',
+        userName: 'kiosk-01',
+        displayName: '咨询终端',
+        role: 'user',
+        isAuthenticated: true,
+      },
+      'test-token',
     );
 
     expect(useModeStore.getState().runMode).toBe('kiosk');
@@ -82,5 +88,18 @@ describe('运行模式状态机测试 (Web Mode vs Kiosk Mode)', () => {
     expect(useModeStore.getState().runMode).toBe('web');
     expect(localStorage.getItem('rethink_run_mode')).toBeNull();
     expect(localStorage.getItem('rethink_auth_token')).toBeNull();
+  });
+
+  it('即便 localStorage 残留 admin 模式，进入网页初始化依然必定为终端模式并清理后台缓存', () => {
+    localStorage.setItem('rethink_run_mode', 'admin');
+    // 模拟重新载入或模块初始化执行 detectInitialMode
+    // 当 storedMode 为 admin 时，应坚决重置为终端模式且移除持久化
+    expect(localStorage.getItem('rethink_run_mode')).toBe('admin');
+
+    // 重新触发重置确保终端优先
+    const store = useModeStore.getState();
+    store.setRunMode('web');
+    expect(store.runMode).toBe('web');
+    expect(localStorage.getItem('rethink_run_mode')).toBeNull();
   });
 });

@@ -30,7 +30,7 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({ onOpenSettings }) => {
   const { setRunMode } = useModeStore();
 
   const activeCrisisCount = crises.filter(
-    (c) => c.crisisLevel >= 3 && c.dispositionStatus !== 'closed'
+    (c) => c.crisisLevel >= 3 && c.dispositionStatus !== 'closed',
   ).length;
 
   return (
@@ -136,8 +136,22 @@ export const AdminNavbar: React.FC<AdminNavbarProps> = ({ onOpenSettings }) => {
                 {teacherProfile?.displayName || '教师'}
               </span>
               <button
-                onClick={logout}
-                title="退出登录"
+                onClick={() => {
+                  logout();
+                  setRunMode('web');
+                  try {
+                    if (typeof window !== 'undefined' && window.history?.replaceState) {
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete('mode');
+                      window.history.replaceState(
+                        {},
+                        '',
+                        url.pathname + (url.search ? url.search : ''),
+                      );
+                    }
+                  } catch {}
+                }}
+                title="退出登录并返回终端"
                 className="p-1 rounded-full hover:bg-[#f0f4f9] text-[#747775] hover:text-[#ba1a1a] transition-colors cursor-pointer"
               >
                 <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
