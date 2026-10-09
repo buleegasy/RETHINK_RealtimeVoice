@@ -47,19 +47,30 @@ export class SidebandAgent {
     this.attachWs = ws;
   }
 
-  public getDialogueHistory(): Array<{ role: 'user' | 'assistant'; content: string }> {
+  public finalizeAssistantTurn(): void {
     if (this.assistantSpeechBuffer.trim()) {
       const text = this.assistantSpeechBuffer.trim();
       this.assistantSpeechBuffer = '';
       this.dialogueHistory.push({ role: 'assistant', content: text });
       this.cbtFsm.recordTurn('assistant');
     }
+  }
+
+  public finalizeUserTurn(): void {
     if (this.userSpeechBuffer.trim()) {
       const text = this.userSpeechBuffer.trim();
       this.userSpeechBuffer = '';
-      this.dialogueHistory.push({ role: 'user', content: text });
-      this.cbtFsm.recordTurn('user');
+      void this.processUserSpeech(text);
     }
+  }
+
+  public hasPendingUserSpeech(): boolean {
+    return Boolean(this.userSpeechBuffer.trim());
+  }
+
+  public getDialogueHistory(): Array<{ role: 'user' | 'assistant'; content: string }> {
+    this.finalizeAssistantTurn();
+    this.finalizeUserTurn();
     return this.dialogueHistory;
   }
 
@@ -99,18 +110,17 @@ export class SidebandAgent {
       payload.type === 'session.input_audio.speech_started'
     ) {
       this.config.coordinator.interrupt();
+      this.finalizeAssistantTurn();
       this.userSpeechBuffer = '';
-      if (this.assistantSpeechBuffer.trim()) {
-        const fullText = this.assistantSpeechBuffer.trim();
-        this.assistantSpeechBuffer = '';
-        this.dialogueHistory.push({ role: 'assistant', content: fullText });
-        this.cbtFsm.recordTurn('assistant');
-      }
       return;
     }
 
     if (payload.type === 'session.input_transcript.delta') {
       const delta = payload.delta || payload.transcript || payload.text || '';
+      // 若已有助手音频缓存尚未提交，说明用户插话打断，立即归档助手轮次
+      if (this.assistantSpeechBuffer.trim()) {
+        this.finalizeAssistantTurn();
+      }
       this.userSpeechBuffer += delta;
       return;
     }
@@ -126,9 +136,7 @@ export class SidebandAgent {
       payload.type === 'session.output_audio.delta'
     ) {
       if (this.userSpeechBuffer.trim()) {
-        const fullSpeech = this.userSpeechBuffer.trim();
-        this.userSpeechBuffer = '';
-        await this.processUserSpeech(fullSpeech);
+        this.finalizeUserTurn();
       }
     }
 
@@ -168,6 +176,10 @@ export class SidebandAgent {
     }
     if (lastTurn && lastTurn.role === 'user' && trimmed.startsWith(lastTurn.content)) {
       lastTurn.content = trimmed;
+      return;
+    }
+    if (lastTurn && lastTurn.role === 'user' && !this.assistantSpeechBuffer.trim()) {
+      lastTurn.content = `${lastTurn.content}${trimmed.startsWith('，') || trimmed.startsWith('。') || trimmed.startsWith(',') ? '' : '，'}${trimmed}`;
       return;
     }
 

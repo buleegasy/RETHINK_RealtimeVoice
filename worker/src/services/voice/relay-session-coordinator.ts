@@ -338,9 +338,11 @@ export class RelaySessionCoordinator {
                   if (serverWs.readyState === WebSocket.OPEN) {
                     serverWs.send(JSON.stringify({ type: 'response.done' }));
                   }
+                  sidebandAgent.finalizeAssistantTurn();
                 }
               }, 450);
             } else if (
+              payload.type === 'session.input_transcript.delta' ||
               payload.type === 'session.input_audio.speech_started' ||
               payload.type === 'input_audio_buffer.speech_started'
             ) {
@@ -353,20 +355,18 @@ export class RelaySessionCoordinator {
                 if (serverWs.readyState === WebSocket.OPEN) {
                   serverWs.send(JSON.stringify({ type: 'response.done' }));
                 }
+                sidebandAgent.finalizeAssistantTurn();
               }
             }
           }
 
-          const { transformed, secondaryEvent } = RealtimeGatewayAdapter.transformUpstreamEvent(
+          const { transformed } = RealtimeGatewayAdapter.transformUpstreamEvent(
             payload,
             isDirectLive,
           );
 
           if (serverWs.readyState === WebSocket.OPEN) {
             serverWs.send(JSON.stringify(transformed));
-            if (secondaryEvent) {
-              serverWs.send(JSON.stringify(secondaryEvent));
-            }
           }
 
           // 委托原生旁路智能体托管会话转写监听、L1/L2 安全熔断与认知引导

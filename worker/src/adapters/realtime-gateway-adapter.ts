@@ -323,7 +323,6 @@ export class RealtimeGatewayAdapter {
             status: result.session?.status || 'active',
           },
         },
-        secondaryEvent: result,
       };
     }
 
@@ -333,7 +332,6 @@ export class RealtimeGatewayAdapter {
           type: 'response.audio_transcript.done',
           transcript: result.transcript || result.text || '',
         },
-        secondaryEvent: result,
       };
     }
 
@@ -343,7 +341,6 @@ export class RealtimeGatewayAdapter {
           type: 'response.audio_transcript.delta',
           delta: result.delta || result.transcript || result.text || '',
         },
-        secondaryEvent: result,
       };
     }
 
@@ -352,7 +349,6 @@ export class RealtimeGatewayAdapter {
         transformed: {
           type: 'response.done',
         },
-        secondaryEvent: result,
       };
     }
 
@@ -362,7 +358,6 @@ export class RealtimeGatewayAdapter {
           type: 'conversation.item.input_audio_transcription.completed',
           transcript: result.transcript || result.text || '',
         },
-        secondaryEvent: result,
       };
     }
 
@@ -372,7 +367,6 @@ export class RealtimeGatewayAdapter {
           type: 'conversation.item.input_audio_transcription.completed',
           transcript: result.delta || result.transcript || result.text || '',
         },
-        secondaryEvent: result,
       };
     }
 
@@ -381,7 +375,6 @@ export class RealtimeGatewayAdapter {
         transformed: {
           type: 'input_audio_buffer.speech_started',
         },
-        secondaryEvent: result,
       };
     }
 
@@ -390,7 +383,6 @@ export class RealtimeGatewayAdapter {
         transformed: {
           type: 'input_audio_buffer.speech_stopped',
         },
-        secondaryEvent: result,
       };
     }
 

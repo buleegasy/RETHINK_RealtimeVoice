@@ -50,6 +50,28 @@ export function resolveReportingModel(override?: string): string {
   return MINIMAX_TEXT_01_MODEL;
 }
 
+export function parseJsonSafe<T = any>(raw: string): T {
+  if (!raw || typeof raw !== 'string') return {} as T;
+  const cleaned = raw.trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+  const match = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (match && match[1]) {
+    try {
+      return JSON.parse(match[1].trim());
+    } catch {}
+  }
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+    } catch {}
+  }
+  return {} as T;
+}
+
 export async function performShadowReasoning(
   userText: string,
   context: ShadowReasoningContext,
@@ -225,7 +247,8 @@ export async function generateStructuredReportWithFlash(
         model,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.1,
-        response_format: { type: 'json_object' },
+        max_tokens: 2500,
+        ...(model !== MINIMAX_TEXT_01_MODEL ? { response_format: { type: 'json_object' } } : {}),
       }),
     });
 
@@ -238,7 +261,7 @@ export async function generateStructuredReportWithFlash(
 
     const data: any = await res.json();
     const raw = data?.choices?.[0]?.message?.content || '{}';
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonSafe(raw);
 
     const crisisLevelNum =
       typeof parsed.crisisLevel === 'number' ? parsed.crisisLevel : fallback.crisisLevel;
@@ -490,7 +513,8 @@ ${existingMemory ? JSON.stringify(existingMemory) : '（无既往记忆）'}
         model,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.2,
-        response_format: { type: 'json_object' },
+        max_tokens: 2500,
+        ...(model !== MINIMAX_TEXT_01_MODEL ? { response_format: { type: 'json_object' } } : {}),
       }),
     });
 
@@ -500,7 +524,7 @@ ${existingMemory ? JSON.stringify(existingMemory) : '（无既往记忆）'}
 
     const data: any = await res.json();
     const raw = data?.choices?.[0]?.message?.content || '{}';
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonSafe(raw);
 
     return {
       userId: cleanId,

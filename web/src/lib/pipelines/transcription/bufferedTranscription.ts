@@ -11,7 +11,8 @@ export class BufferedTranscriptionPipeline implements ITranscriptionPipeline {
   private assistantBuffer: string = '';
   private currentTurnId: { user?: string; assistant?: string } = {};
 
-  private readonly fillerWordRegex = /^(?:[呃啊嗯哦喔哎呀]|那个|就是说|然后呢|这个|就是|[.\s…，。、])+/g;
+  private readonly fillerWordRegex =
+    /^(?:[呃啊嗯哦喔哎呀]|那个|就是说|然后呢|这个|就是|[.\s…，。、])+/g;
 
   public feedDelta(speaker: 'user' | 'assistant', delta: string): void {
     if (!delta) return;
@@ -20,7 +21,15 @@ export class BufferedTranscriptionPipeline implements ITranscriptionPipeline {
       if (!this.currentTurnId.user) {
         this.currentTurnId.user = safeRandomId('user');
       }
-      this.userBuffer += delta;
+      if (
+        this.userBuffer &&
+        (delta === this.userBuffer ||
+          (delta.startsWith(this.userBuffer) && delta.length > this.userBuffer.length))
+      ) {
+        this.userBuffer = delta;
+      } else {
+        this.userBuffer += delta;
+      }
       this.notifySubscribers({
         id: this.currentTurnId.user,
         speaker: 'user',
@@ -32,7 +41,15 @@ export class BufferedTranscriptionPipeline implements ITranscriptionPipeline {
       if (!this.currentTurnId.assistant) {
         this.currentTurnId.assistant = safeRandomId('assistant');
       }
-      this.assistantBuffer += delta;
+      if (
+        this.assistantBuffer &&
+        (delta === this.assistantBuffer ||
+          (delta.startsWith(this.assistantBuffer) && delta.length > this.assistantBuffer.length))
+      ) {
+        this.assistantBuffer = delta;
+      } else {
+        this.assistantBuffer += delta;
+      }
       this.notifySubscribers({
         id: this.currentTurnId.assistant,
         speaker: 'assistant',

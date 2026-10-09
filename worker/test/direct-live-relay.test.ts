@@ -272,7 +272,7 @@ describe('RelaySessionCoordinator 直连全双工实时会话协同与门禁测�
     expect(audioDeltaMsg.delta).toBe('cmVzcG9uc2VhdWRpbw==');
   });
 
-  it('捕获 session.delegation.created并在影子大脑推演完成后发送 session.thinking.append 携带 delegation_id', async () => {
+  it('直连实时通话架构下移除影子大脑旁路推演，不发送 session.thinking.append 以确保零延迟', async () => {
     const clientWs = new MockWebSocket() as unknown as WebSocket;
     const serverWs = new MockWebSocket() as unknown as WebSocket;
     const mockUpstreamWs = new MockWebSocket();
@@ -319,9 +319,6 @@ describe('RelaySessionCoordinator 直连全双工实时会话协同与门禁测�
 
     const sentToUpstream = mockUpstreamWs.sentData.map((d) => JSON.parse(d));
     const thinkingAppend = sentToUpstream.find((m) => m.type === 'session.thinking.append');
-    if (thinkingAppend) {
-      expect(thinkingAppend.delegation_id).toBe('del_cbt_12345');
-      expect(thinkingAppend.thinking).toContain('影子大脑认知指导');
-    }
+    expect(thinkingAppend).toBeUndefined();
   });
 });

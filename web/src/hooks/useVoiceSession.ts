@@ -210,11 +210,9 @@ export function useVoiceSession() {
           },
           onTextDelta: (text) => {
             transcriptionRef.current.feedDelta('assistant', text);
-            useTelemetryStore.getState().setStreamingAssistantText(text);
           },
           onTranscriptDelta: (transcript) => {
             transcriptionRef.current.feedDelta('user', transcript);
-            useTelemetryStore.getState().setStreamingUserText(transcript);
           },
           onSpeechStarted: () => {
             // 播放期间忽略服务端 VAD 的 speech_started，完全由本地带回声抑制的 BargeInDetector 处理真实打断
@@ -510,6 +508,21 @@ export function useVoiceSession() {
       audioGraphRef.current.setMute(nextMuted);
     }
   }, [isMuted, setIsMuted, audioGraphRef]);
+
+  useEffect(() => {
+    const unsub = transcriptionRef.current.subscribe((seg) => {
+      if (!seg.isFinal) {
+        if (seg.speaker === 'user') {
+          useTelemetryStore.getState().setStreamingUserText(seg.text);
+        } else {
+          useTelemetryStore.getState().setStreamingAssistantText(seg.text);
+        }
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
 
   useEffect(() => {
     const handleCrisisEndCall = () => {
