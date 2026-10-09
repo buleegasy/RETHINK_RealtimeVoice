@@ -192,7 +192,16 @@ export const LoginWall: React.FC = () => {
           </button>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-black/10 flex justify-end text-xs font-mono">
+        <div className="mt-6 pt-4 border-t border-black/10 flex items-center justify-between text-xs font-mono">
+          <button
+            type="button"
+            onClick={() => setRunMode('test')}
+            className="flex items-center gap-1.5 text-black/60 hover:text-black cursor-pointer transition-colors px-2 py-1 rounded-md hover:bg-black/5 border border-black/10"
+            title="进入影子大脑与实时遥测测试台"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>遥测测试台</span>
+          </button>
           <button
             type="button"
             onClick={() => setRunMode('admin')}
