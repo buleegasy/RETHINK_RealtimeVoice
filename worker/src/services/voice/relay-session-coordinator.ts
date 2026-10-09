@@ -396,7 +396,7 @@ export class RelaySessionCoordinator {
             })
             .catch(() => {});
 
-          // 3. 影子大脑认知指导与单点响应协调 (800ms 超时熔断降级)
+          // 3. 影子大脑认知指导与双轨响应协调 (双轨异步极速流式回复)
           this.coordinateShadowTurn({
             shadowPipeline,
             serverWs,
@@ -410,6 +410,7 @@ export class RelaySessionCoordinator {
             situationalMemory: getMemory(),
             getStudentName,
             setStudentName,
+            dualTrack: true,
           });
         }
 
@@ -422,6 +423,108 @@ export class RelaySessionCoordinator {
   }
 
   private static coordinateShadowTurn(params: {
+    shadowPipeline: ShadowReasoningPipeline;
+    serverWs?: WebSocket;
+    upstreamWs: WebSocket;
+    coordinator: BargeInCoordinator;
+    currentSeq: number;
+    signal: AbortSignal;
+    userText: string;
+    dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
+    studentName: string;
+    situationalMemory: any;
+    getStudentName: () => string;
+    setStudentName: (name: string) => void;
+    timeoutMs?: number;
+    dualTrack?: boolean;
+  }): void {
+    if (params.dualTrack) {
+      this.coordinateDualTrackTurn(params);
+    } else {
+      this.coordinateSingleTrackTurn(params);
+    }
+  }
+
+  private static coordinateDualTrackTurn(params: {
+    shadowPipeline: ShadowReasoningPipeline;
+    serverWs?: WebSocket;
+    upstreamWs: WebSocket;
+    coordinator: BargeInCoordinator;
+    currentSeq: number;
+    signal: AbortSignal;
+    userText: string;
+    dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
+    studentName: string;
+    situationalMemory: any;
+    getStudentName: () => string;
+    setStudentName: (name: string) => void;
+  }): void {
+    const {
+      shadowPipeline,
+      serverWs,
+      upstreamWs,
+      coordinator,
+      currentSeq,
+      signal,
+      userText,
+      dialogueHistory,
+      studentName,
+      situationalMemory,
+      getStudentName,
+      setStudentName,
+    } = params;
+
+    const shadowStartTime = Date.now();
+
+    // 1. 快轨：即刻触发流式语音回复（零阻塞，延迟降至最低）
+    this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, null);
+
+    // 2. 慢轨：影子大脑旁路并发认知推演与会话指导演进
+    shadowPipeline
+      .execute({
+        userText,
+        dialogueHistory,
+        studentName,
+        situationalMemory,
+        signal,
+        isTurnValid: () => coordinator.isValid(currentSeq) && !signal.aborted,
+        onExtractedName: (name) => {
+          if (!getStudentName()) setStudentName(name);
+        },
+      })
+      .then((hint) => {
+        if (signal.aborted || !coordinator.isValid(currentSeq)) return;
+        const durationMs = Date.now() - shadowStartTime;
+
+        if (serverWs && serverWs.readyState === WebSocket.OPEN) {
+          serverWs.send(
+            JSON.stringify({
+              type: 'rethink.telemetry.shadow_directive',
+              turnSequence: currentSeq,
+              userText,
+              cognitiveHint: hint,
+              durationMs,
+              fallback: !hint,
+              timestamp: Date.now(),
+            }),
+          );
+        }
+
+        if (hint && upstreamWs.readyState === WebSocket.OPEN) {
+          upstreamWs.send(
+            JSON.stringify({
+              type: 'session.update',
+              session: {
+                instructions: `【影子大脑认知指导】：${hint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语交流，并在后续对话中自然贯彻此认知引导。`,
+              },
+            }),
+          );
+        }
+      })
+      .catch(() => null);
+  }
+
+  private static coordinateSingleTrackTurn(params: {
     shadowPipeline: ShadowReasoningPipeline;
     serverWs?: WebSocket;
     upstreamWs: WebSocket;
