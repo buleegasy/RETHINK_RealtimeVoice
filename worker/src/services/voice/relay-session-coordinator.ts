@@ -112,6 +112,7 @@ export class RelaySessionCoordinator {
         shadowPipeline,
         openRouterConfig: { openRouterKey, openRouterBaseUrl, openRouterModel },
         isDirectLive,
+        enableShadowReasoning: false,
       });
 
       let isSessionReady = !isDirectLive;
@@ -299,6 +300,8 @@ export class RelaySessionCoordinator {
     onSessionReady: () => void;
   }): void {
     const { serverWs, upstreamWs, sidebandAgent, isDirectLive, onSessionReady } = params;
+    let isAssistantSpeaking = false;
+    let assistantSilenceTimer: any = null;
 
     upstreamWs.addEventListener('message', async (event) => {
       try {
@@ -316,6 +319,42 @@ export class RelaySessionCoordinator {
         if (payload && typeof payload === 'object') {
           if (isDirectLive && payload.type === 'session.started') {
             onSessionReady();
+          }
+
+          if (isDirectLive) {
+            if (payload.type === 'session.output_audio.delta') {
+              if (!isAssistantSpeaking) {
+                isAssistantSpeaking = true;
+                if (serverWs.readyState === WebSocket.OPEN) {
+                  serverWs.send(JSON.stringify({ type: 'response.created' }));
+                }
+              }
+              if (assistantSilenceTimer) {
+                clearTimeout(assistantSilenceTimer);
+              }
+              assistantSilenceTimer = setTimeout(() => {
+                if (isAssistantSpeaking) {
+                  isAssistantSpeaking = false;
+                  if (serverWs.readyState === WebSocket.OPEN) {
+                    serverWs.send(JSON.stringify({ type: 'response.done' }));
+                  }
+                }
+              }, 450);
+            } else if (
+              payload.type === 'session.input_audio.speech_started' ||
+              payload.type === 'input_audio_buffer.speech_started'
+            ) {
+              if (assistantSilenceTimer) {
+                clearTimeout(assistantSilenceTimer);
+                assistantSilenceTimer = null;
+              }
+              if (isAssistantSpeaking) {
+                isAssistantSpeaking = false;
+                if (serverWs.readyState === WebSocket.OPEN) {
+                  serverWs.send(JSON.stringify({ type: 'response.done' }));
+                }
+              }
+            }
           }
 
           const { transformed, secondaryEvent } = RealtimeGatewayAdapter.transformUpstreamEvent(

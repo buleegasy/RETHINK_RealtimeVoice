@@ -20,6 +20,7 @@ export interface SidebandAgentConfig {
     openRouterModel: string;
   };
   isDirectLive: boolean;
+  enableShadowReasoning?: boolean;
 }
 
 /**
@@ -33,9 +34,13 @@ export class SidebandAgent {
   private activeDelegationId: string | null = null;
   private attachWs: WebSocket | null = null;
   private studentName: string;
+  private userSpeechBuffer: string = '';
+  private assistantSpeechBuffer: string = '';
+  private readonly enableShadowReasoning: boolean;
 
   constructor(private readonly config: SidebandAgentConfig) {
     this.studentName = config.studentName;
+    this.enableShadowReasoning = config.enableShadowReasoning ?? true;
   }
 
   public attachControlStream(ws: WebSocket): void {
@@ -43,6 +48,18 @@ export class SidebandAgent {
   }
 
   public getDialogueHistory(): Array<{ role: 'user' | 'assistant'; content: string }> {
+    if (this.assistantSpeechBuffer.trim()) {
+      const text = this.assistantSpeechBuffer.trim();
+      this.assistantSpeechBuffer = '';
+      this.dialogueHistory.push({ role: 'assistant', content: text });
+      this.cbtFsm.recordTurn('assistant');
+    }
+    if (this.userSpeechBuffer.trim()) {
+      const text = this.userSpeechBuffer.trim();
+      this.userSpeechBuffer = '';
+      this.dialogueHistory.push({ role: 'user', content: text });
+      this.cbtFsm.recordTurn('user');
+    }
     return this.dialogueHistory;
   }
 
@@ -82,7 +99,37 @@ export class SidebandAgent {
       payload.type === 'session.input_audio.speech_started'
     ) {
       this.config.coordinator.interrupt();
+      this.userSpeechBuffer = '';
+      if (this.assistantSpeechBuffer.trim()) {
+        const fullText = this.assistantSpeechBuffer.trim();
+        this.assistantSpeechBuffer = '';
+        this.dialogueHistory.push({ role: 'assistant', content: fullText });
+        this.cbtFsm.recordTurn('assistant');
+      }
       return;
+    }
+
+    if (payload.type === 'session.input_transcript.delta') {
+      const delta = payload.delta || payload.transcript || payload.text || '';
+      this.userSpeechBuffer += delta;
+      return;
+    }
+
+    if (payload.type === 'session.output_transcript.delta') {
+      const delta = payload.delta || payload.transcript || payload.text || '';
+      this.assistantSpeechBuffer += delta;
+      return;
+    }
+
+    if (
+      payload.type === 'session.input_audio.speech_stopped' ||
+      payload.type === 'session.output_audio.delta'
+    ) {
+      if (this.userSpeechBuffer.trim()) {
+        const fullSpeech = this.userSpeechBuffer.trim();
+        this.userSpeechBuffer = '';
+        await this.processUserSpeech(fullSpeech);
+      }
     }
 
     const userText = this.extractTranscriptText(payload);
@@ -99,6 +146,9 @@ export class SidebandAgent {
    * 处理用户有效发言的旁路认知推演与安全审计
    */
   public async processUserSpeech(userText: string, itemId?: string): Promise<void> {
+    const trimmed = (userText || '').trim();
+    if (!trimmed) return;
+
     if (itemId && this.processedItemIds.has(itemId)) return;
     if (itemId) {
       this.processedItemIds.add(itemId);
@@ -108,12 +158,25 @@ export class SidebandAgent {
       }
     }
 
-    this.dialogueHistory.push({ role: 'user', content: userText });
+    const lastTurn = this.dialogueHistory[this.dialogueHistory.length - 1];
+    if (
+      lastTurn &&
+      lastTurn.role === 'user' &&
+      (lastTurn.content === trimmed || lastTurn.content.includes(trimmed))
+    ) {
+      return;
+    }
+    if (lastTurn && lastTurn.role === 'user' && trimmed.startsWith(lastTurn.content)) {
+      lastTurn.content = trimmed;
+      return;
+    }
+
+    this.dialogueHistory.push({ role: 'user', content: trimmed });
     this.cbtFsm.recordTurn('user');
     const { sequenceId, signal } = this.config.coordinator.nextTurn();
 
     // 1. L1 边缘即时硬过滤
-    if (isL1Crisis(userText)) {
+    if (isL1Crisis(trimmed)) {
       this.config.crisisHandler.triggerIntervention('L1', 'L1本地即时硬过滤命中危机敏感词', [
         '自伤自杀危机',
         '紧急干预',
@@ -127,10 +190,12 @@ export class SidebandAgent {
     }
 
     // 2. L2 异步语义旁路熔断
-    this.dispatchL2SafetyCheck(userText, sequenceId);
+    this.dispatchL2SafetyCheck(trimmed, sequenceId);
 
-    // 3. 影子大脑认知指导推演与旁路注入（异步非阻塞执行）
-    this.dispatchShadowReasoning(userText, sequenceId, signal).catch(() => {});
+    // 3. 影子大脑认知指导推演与旁路注入（若开启则异步非阻塞执行）
+    if (this.enableShadowReasoning) {
+      this.dispatchShadowReasoning(trimmed, sequenceId, signal).catch(() => {});
+    }
   }
 
   /**
@@ -210,12 +275,27 @@ export class SidebandAgent {
   }
 
   private recordAssistantTranscript(payload: any): void {
+    const explicitText = payload.transcript || payload.text;
     if (
       (payload.type === 'response.audio_transcript.done' ||
         payload.type === 'session.output_transcript.completed') &&
-      (payload.transcript || payload.text)
+      explicitText
     ) {
-      this.dialogueHistory.push({ role: 'assistant', content: payload.transcript || payload.text });
+      this.assistantSpeechBuffer = '';
+      this.dialogueHistory.push({ role: 'assistant', content: explicitText });
+      this.cbtFsm.recordTurn('assistant');
+      return;
+    }
+
+    if (
+      (payload.type === 'response.done' ||
+        payload.type === 'session.output_audio.done' ||
+        payload.type === 'session.output_transcript.completed') &&
+      this.assistantSpeechBuffer.trim()
+    ) {
+      const fullText = this.assistantSpeechBuffer.trim();
+      this.assistantSpeechBuffer = '';
+      this.dialogueHistory.push({ role: 'assistant', content: fullText });
       this.cbtFsm.recordTurn('assistant');
     }
   }

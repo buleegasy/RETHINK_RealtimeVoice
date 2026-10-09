@@ -5,6 +5,7 @@
 
 import type { Env } from '../types';
 import { formatSituationalMemoryPrompt } from '../lib/deepseek-flash';
+import { formatCbtCapsulesGuide } from '../lib/rag';
 
 export interface RealtimeGatewayConfig {
   upstreamKey: string;
@@ -99,12 +100,18 @@ export class RealtimeGatewayAdapter {
   }
 
   public static resolveInstructionsWithMemory(instructions: string, currentMemory?: any): string {
-    if (!currentMemory) return instructions;
-    const memoryPrompt = formatSituationalMemoryPrompt(currentMemory);
-    if (memoryPrompt && !instructions.includes('【来访学生历史个人情景记忆档案】')) {
-      return `${instructions}\n\n${memoryPrompt}`;
+    let resolved = instructions;
+    if (currentMemory) {
+      const memoryPrompt = formatSituationalMemoryPrompt(currentMemory);
+      if (memoryPrompt && !resolved.includes('【来访学生历史个人情景记忆档案】')) {
+        resolved = `${resolved}\n\n${memoryPrompt}`;
+      }
     }
-    return instructions;
+    const cbtGuide = formatCbtCapsulesGuide();
+    if (cbtGuide && !resolved.includes('【核心 CBT 心理干预与应对策略知识库】')) {
+      resolved = `${resolved}\n\n${cbtGuide}`;
+    }
+    return resolved;
   }
 
   public static readonly DEFAULT_COMPANION_INSTRUCTIONS =
@@ -330,11 +337,40 @@ export class RealtimeGatewayAdapter {
       };
     }
 
+    if (result.type === 'session.output_transcript.delta') {
+      return {
+        transformed: {
+          type: 'response.audio_transcript.delta',
+          delta: result.delta || result.transcript || result.text || '',
+        },
+        secondaryEvent: result,
+      };
+    }
+
+    if (result.type === 'session.output_audio.done') {
+      return {
+        transformed: {
+          type: 'response.done',
+        },
+        secondaryEvent: result,
+      };
+    }
+
     if (result.type === 'session.input_transcript.completed') {
       return {
         transformed: {
           type: 'conversation.item.input_audio_transcription.completed',
           transcript: result.transcript || result.text || '',
+        },
+        secondaryEvent: result,
+      };
+    }
+
+    if (result.type === 'session.input_transcript.delta') {
+      return {
+        transformed: {
+          type: 'conversation.item.input_audio_transcription.completed',
+          transcript: result.delta || result.transcript || result.text || '',
         },
         secondaryEvent: result,
       };
