@@ -1,12 +1,11 @@
 import type { Env } from '../../types';
 import { RealtimeGatewayAdapter } from '../../adapters/realtime-gateway-adapter';
-import { isL1Crisis, checkL2FlashSafety } from '../../lib/safety-filter';
 import { getSituationalMemory } from '../../lib/memory-store';
 import { BargeInCoordinator } from './barge-in-coordinator';
 import { CrisisHandler } from './crisis-handler';
 import { ShadowReasoningPipeline } from './shadow-reasoning-pipeline';
 import { SessionReporter } from './session-reporter';
-import { CbtStateMachine } from '../../lib/cbt-fsm';
+import { SidebandAgent } from './sideband-agent';
 
 export interface RelayQueryParams {
   sessionId?: string;
@@ -75,7 +74,6 @@ export class RelaySessionCoordinator {
       const sessionId = query.sessionId || `sess_${Date.now()}`;
       const requestedUserId = query.userId || query.username || '';
       const sessionStartTime = Date.now();
-      const cbtFsm = new CbtStateMachine();
       const coordinator = new BargeInCoordinator();
       const crisisHandler = new CrisisHandler(
         serverWs,
@@ -86,8 +84,7 @@ export class RelaySessionCoordinator {
       );
 
       const currentMemory = await getSituationalMemory(env, requestedUserId);
-      let studentName = currentMemory?.userName || '';
-      const dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      const studentName = currentMemory?.userName || '';
 
       const openRouterKey = env.OPENROUTER_API_KEY || config.upstreamKey || '';
       const openRouterBaseUrl =
@@ -103,8 +100,21 @@ export class RelaySessionCoordinator {
         openRouterModel,
       });
 
+      const sidebandAgent = new SidebandAgent({
+        sessionId,
+        userId: requestedUserId,
+        studentName,
+        situationalMemory: currentMemory,
+        serverWs,
+        upstreamWs,
+        coordinator,
+        crisisHandler,
+        shadowPipeline,
+        openRouterConfig: { openRouterKey, openRouterBaseUrl, openRouterModel },
+        isDirectLive,
+      });
+
       let isSessionReady = !isDirectLive;
-      let activeDelegationId: string | null = null;
 
       // 绑定客户端事件通道
       const { flushEarlyQueue } = this.bindClientEvents({
@@ -126,29 +136,15 @@ export class RelaySessionCoordinator {
         upstreamWs.send(JSON.stringify(startPayload));
       }
 
-      // 绑定上游网关事件通道
+      // 绑定上游网关事件通道（全双工流转发与原生旁路智能体解耦）
       this.bindUpstreamEvents({
         serverWs,
         upstreamWs,
-        coordinator,
-        crisisHandler,
-        shadowPipeline,
-        dialogueHistory,
-        cbtFsm,
-        openRouterConfig: { openRouterKey, openRouterBaseUrl, openRouterModel },
-        getStudentName: () => studentName,
-        setStudentName: (name) => {
-          studentName = name;
-        },
-        getMemory: () => currentMemory,
+        sidebandAgent,
         isDirectLive,
         onSessionReady: () => {
           isSessionReady = true;
           flushEarlyQueue();
-        },
-        getActiveDelegationId: () => activeDelegationId,
-        setActiveDelegationId: (id) => {
-          activeDelegationId = id;
         },
       });
 
@@ -158,13 +154,11 @@ export class RelaySessionCoordinator {
         upstreamWs,
         coordinator,
         crisisHandler,
+        sidebandAgent,
         env,
         sessionId,
         requestedUserId,
-        dialogueHistory,
-        getStudentName: () => studentName,
         sessionStartTime,
-        cbtFsm,
         ctx,
       });
 
@@ -291,43 +285,11 @@ export class RelaySessionCoordinator {
   private static bindUpstreamEvents(params: {
     serverWs: WebSocket;
     upstreamWs: WebSocket;
-    coordinator: BargeInCoordinator;
-    crisisHandler: CrisisHandler;
-    shadowPipeline: ShadowReasoningPipeline;
-    dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
-    cbtFsm: CbtStateMachine;
-    openRouterConfig: {
-      openRouterKey: string;
-      openRouterBaseUrl?: string;
-      openRouterModel: string;
-    };
-    getStudentName: () => string;
-    setStudentName: (name: string) => void;
-    getMemory: () => any;
+    sidebandAgent: SidebandAgent;
     isDirectLive: boolean;
     onSessionReady: () => void;
-    getActiveDelegationId: () => string | null;
-    setActiveDelegationId: (id: string | null) => void;
   }): void {
-    const {
-      serverWs,
-      upstreamWs,
-      coordinator,
-      crisisHandler,
-      shadowPipeline,
-      dialogueHistory,
-      cbtFsm,
-      openRouterConfig,
-      getStudentName,
-      setStudentName,
-      getMemory,
-      isDirectLive,
-      onSessionReady,
-      getActiveDelegationId,
-      setActiveDelegationId,
-    } = params;
-
-    const processedItemIds = new Set<string>();
+    const { serverWs, upstreamWs, sidebandAgent, isDirectLive, onSessionReady } = params;
 
     upstreamWs.addEventListener('message', async (event) => {
       try {
@@ -346,13 +308,6 @@ export class RelaySessionCoordinator {
           if (isDirectLive && payload.type === 'session.started') {
             onSessionReady();
           }
-          if (
-            isDirectLive &&
-            payload.type === 'session.delegation.created' &&
-            payload.delegation_id
-          ) {
-            setActiveDelegationId(payload.delegation_id);
-          }
 
           const { transformed, secondaryEvent } = RealtimeGatewayAdapter.transformUpstreamEvent(
             payload,
@@ -365,255 +320,15 @@ export class RelaySessionCoordinator {
               serverWs.send(JSON.stringify(secondaryEvent));
             }
           }
-        }
 
-        if (!payload || typeof payload.type !== 'string') return;
-
-        if (
-          payload.type === 'input_audio_buffer.speech_started' ||
-          payload.type === 'session.input_audio.speech_started'
-        ) {
-          coordinator.interrupt();
-          return;
-        }
-
-        const extractedUserText = this.extractTranscriptText(payload);
-        const currentItemId = payload.item_id || payload.item?.id || payload.event_id;
-
-        if (extractedUserText) {
-          if (currentItemId && processedItemIds.has(currentItemId)) return;
-          if (currentItemId) {
-            processedItemIds.add(currentItemId);
-            if (processedItemIds.size > 50) {
-              const oldest = processedItemIds.values().next().value;
-              if (oldest) processedItemIds.delete(oldest);
-            }
-          }
-
-          dialogueHistory.push({ role: 'user', content: extractedUserText });
-          cbtFsm.recordTurn('user');
-          const { sequenceId: currentSeq, signal } = coordinator.nextTurn();
-
-          if (isL1Crisis(extractedUserText)) {
-            crisisHandler.triggerIntervention('L1', 'L1本地即时硬过滤命中危机敏感词', [
-              '自伤自杀危机',
-              '紧急干预',
-            ]);
-            return;
-          }
-
-          this.dispatchL2SafetyCheck({
-            extractedUserText,
-            currentSeq,
-            serverWs,
-            coordinator,
-            crisisHandler,
-            openRouterConfig,
-          });
-
-          this.coordinateShadowTurn({
-            shadowPipeline,
-            serverWs,
-            upstreamWs,
-            coordinator,
-            currentSeq,
-            signal,
-            userText: extractedUserText,
-            dialogueHistory,
-            studentName: getStudentName(),
-            situationalMemory: getMemory(),
-            getStudentName,
-            setStudentName,
-            isDirectLive,
-            getActiveDelegationId,
-            dualTrack: true,
-          });
-        }
-
-        if (
-          (payload.type === 'response.audio_transcript.done' ||
-            payload.type === 'session.output_transcript.completed') &&
-          (payload.transcript || payload.text)
-        ) {
-          dialogueHistory.push({ role: 'assistant', content: payload.transcript || payload.text });
-          cbtFsm.recordTurn('assistant');
+          // 委托原生旁路智能体托管会话转写监听、L1/L2 安全熔断与认知引导
+          await sidebandAgent.handleUpstreamEvent(payload);
         }
       } catch {}
     });
   }
 
-  private static extractTranscriptText(payload: any): string {
-    if (
-      (payload.type === 'conversation.item.input_audio_transcription.completed' ||
-        payload.type === 'input_audio_transcription.completed' ||
-        payload.type === 'session.input_transcript.completed') &&
-      (payload.transcript || payload.text)
-    ) {
-      return String(payload.transcript || payload.text || '').trim();
-    }
-
-    if (
-      (payload.type === 'conversation.item.created' ||
-        payload.type === 'conversation.item.added' ||
-        payload.type === 'conversation.item.done') &&
-      payload.item?.role === 'user'
-    ) {
-      const contents = Array.isArray(payload.item?.content) ? payload.item.content : [];
-      for (const c of contents) {
-        if (c.transcript) return String(c.transcript).trim();
-        if (c.text) return String(c.text).trim();
-      }
-    }
-    return '';
-  }
-
-  private static dispatchL2SafetyCheck(params: {
-    extractedUserText: string;
-    currentSeq: number;
-    serverWs: WebSocket;
-    coordinator: BargeInCoordinator;
-    crisisHandler: CrisisHandler;
-    openRouterConfig: { openRouterKey: string; openRouterBaseUrl?: string };
-  }): void {
-    const {
-      extractedUserText,
-      currentSeq,
-      serverWs,
-      coordinator,
-      crisisHandler,
-      openRouterConfig,
-    } = params;
-    const safetyStartTime = Date.now();
-
-    checkL2FlashSafety(extractedUserText, {
-      apiKey: openRouterConfig.openRouterKey,
-      baseUrl: openRouterConfig.openRouterBaseUrl,
-      signal: AbortSignal.timeout(5000),
-    })
-      .then((isCrisis) => {
-        if (serverWs.readyState === WebSocket.OPEN) {
-          serverWs.send(
-            JSON.stringify({
-              type: 'rethink.telemetry.safety_check',
-              turnSequence: currentSeq,
-              isCrisis,
-              durationMs: Date.now() - safetyStartTime,
-              timestamp: Date.now(),
-            }),
-          );
-        }
-        if (isCrisis && !crisisHandler.isTriggered) {
-          coordinator.interrupt();
-          crisisHandler.triggerIntervention('L2', 'L2 DeepSeek V4 Flash语义熔断命中危机', [
-            '自伤自杀危机',
-            '语义旁路熔断',
-          ]);
-        }
-      })
-      .catch(() => {});
-  }
-
-  private static coordinateShadowTurn(params: {
-    shadowPipeline: ShadowReasoningPipeline;
-    serverWs?: WebSocket;
-    upstreamWs: WebSocket;
-    coordinator: BargeInCoordinator;
-    currentSeq: number;
-    signal: AbortSignal;
-    userText: string;
-    dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
-    studentName: string;
-    situationalMemory: any;
-    getStudentName: () => string;
-    setStudentName: (name: string) => void;
-    isDirectLive: boolean;
-    getActiveDelegationId: () => string | null;
-    dualTrack?: boolean;
-  }): void {
-    const {
-      shadowPipeline,
-      serverWs,
-      upstreamWs,
-      coordinator,
-      currentSeq,
-      signal,
-      userText,
-      dialogueHistory,
-      studentName,
-      situationalMemory,
-      getStudentName,
-      setStudentName,
-      isDirectLive,
-      getActiveDelegationId,
-    } = params;
-
-    const shadowStartTime = Date.now();
-
-    // 非云端直连模式下触发显式流式回复
-    if (!isDirectLive) {
-      this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, null);
-    }
-
-    // 慢轨：影子大脑旁路并发认知推演
-    shadowPipeline
-      .execute({
-        userText,
-        dialogueHistory,
-        studentName,
-        situationalMemory,
-        signal,
-        isTurnValid: () => coordinator.isValid(currentSeq) && !signal.aborted,
-        onExtractedName: (name) => {
-          if (!getStudentName()) setStudentName(name);
-        },
-      })
-      .then((hint) => {
-        if (signal.aborted || !coordinator.isValid(currentSeq)) return;
-        const durationMs = Date.now() - shadowStartTime;
-
-        if (serverWs && serverWs.readyState === WebSocket.OPEN) {
-          serverWs.send(
-            JSON.stringify({
-              type: 'rethink.telemetry.shadow_directive',
-              turnSequence: currentSeq,
-              userText,
-              cognitiveHint: hint,
-              durationMs,
-              fallback: !hint,
-              timestamp: Date.now(),
-            }),
-          );
-        }
-
-        if (hint && upstreamWs.readyState === WebSocket.OPEN) {
-          const delegationId = getActiveDelegationId();
-          if (isDirectLive) {
-            if (delegationId) {
-              upstreamWs.send(
-                JSON.stringify({
-                  type: 'session.thinking.append',
-                  delegation_id: delegationId,
-                  thinking: `【影子大脑认知指导】：${hint.trim()}`,
-                }),
-              );
-            }
-          } else {
-            upstreamWs.send(
-              JSON.stringify({
-                type: 'session.update',
-                session: {
-                  type: 'realtime',
-                  instructions: `【影子大脑认知指导】：${hint.trim()}。请以同校同级死党语气，自然转化为高中生日常口语交流，并在后续对话中自然贯彻此认知引导。`,
-                },
-              }),
-            );
-          }
-        }
-      })
-      .catch(() => null);
-  }
-
-  private static triggerTurnResponse(
+  public static triggerTurnResponse(
     upstreamWs: WebSocket,
     coordinator: BargeInCoordinator,
     currentSeq: number,
@@ -637,18 +352,171 @@ export class RelaySessionCoordinator {
     }
   }
 
+  public static coordinateShadowTurn(params: any): void {
+    if (params.dualTrack) {
+      this.coordinateDualTrackTurn(params);
+    } else {
+      this.coordinateSingleTrackTurn(params);
+    }
+  }
+
+  private static coordinateDualTrackTurn(params: any): void {
+    const {
+      shadowPipeline,
+      serverWs,
+      upstreamWs,
+      coordinator,
+      currentSeq,
+      signal,
+      userText,
+      dialogueHistory,
+      studentName,
+      situationalMemory,
+      getStudentName,
+      setStudentName,
+      isDirectLive,
+      getActiveDelegationId,
+    } = params;
+
+    if (!isDirectLive) {
+      this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, null);
+    }
+
+    shadowPipeline
+      ?.execute({
+        userText,
+        dialogueHistory,
+        studentName,
+        situationalMemory,
+        signal,
+        isTurnValid: () => coordinator.isValid(currentSeq) && !signal.aborted,
+        onExtractedName: (name: string) => {
+          if (!getStudentName?.()) setStudentName?.(name);
+        },
+      })
+      ?.then((hint: string) => {
+        if (signal.aborted || !coordinator.isValid(currentSeq)) return;
+        if (serverWs && serverWs.readyState === WebSocket.OPEN) {
+          serverWs.send(
+            JSON.stringify({
+              type: 'rethink.telemetry.shadow_directive',
+              turnSequence: currentSeq,
+              userText,
+              cognitiveHint: hint,
+              fallback: !hint,
+              timestamp: Date.now(),
+            }),
+          );
+        }
+        if (hint && upstreamWs?.readyState === WebSocket.OPEN) {
+          const delegationId = getActiveDelegationId?.();
+          if (isDirectLive && delegationId) {
+            upstreamWs.send(
+              JSON.stringify({
+                type: 'session.thinking.append',
+                delegation_id: delegationId,
+                thinking: `【影子大脑认知指导】：${hint.trim()}`,
+              }),
+            );
+          } else if (!isDirectLive) {
+            upstreamWs.send(
+              JSON.stringify({
+                type: 'session.update',
+                session: {
+                  type: 'realtime',
+                  instructions: `【影子大脑认知指导】：${hint.trim()}`,
+                },
+              }),
+            );
+          }
+        }
+      })
+      ?.catch(() => null);
+  }
+
+  private static coordinateSingleTrackTurn(params: any): void {
+    const {
+      shadowPipeline,
+      serverWs,
+      upstreamWs,
+      coordinator,
+      currentSeq,
+      signal,
+      userText,
+      dialogueHistory,
+      studentName,
+      situationalMemory,
+      getStudentName,
+      setStudentName,
+      timeoutMs = 2500,
+    } = params;
+
+    let hasResponded = false;
+    let timer: any = null;
+    const shadowStartTime = Date.now();
+
+    const timeoutPromise = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        resolve(null);
+      }, timeoutMs);
+    });
+
+    signal?.addEventListener?.(
+      'abort',
+      () => {
+        if (timer) clearTimeout(timer);
+      },
+      { once: true },
+    );
+
+    const shadowPromise = shadowPipeline
+      ?.execute({
+        userText,
+        dialogueHistory,
+        studentName,
+        situationalMemory,
+        signal,
+        isTurnValid: () => coordinator.isValid(currentSeq) && !hasResponded,
+        onExtractedName: (name: string) => {
+          if (!getStudentName?.()) setStudentName?.(name);
+        },
+      })
+      ?.catch(() => null);
+
+    void Promise.race([shadowPromise, timeoutPromise]).then((hint) => {
+      if (timer) clearTimeout(timer);
+      if (hasResponded) return;
+      hasResponded = true;
+      const durationMs = Date.now() - shadowStartTime;
+
+      if (serverWs && serverWs.readyState === WebSocket.OPEN) {
+        serverWs.send(
+          JSON.stringify({
+            type: 'rethink.telemetry.shadow_directive',
+            turnSequence: currentSeq,
+            userText,
+            cognitiveHint: hint,
+            durationMs,
+            fallback: !hint,
+            timestamp: Date.now(),
+          }),
+        );
+      }
+
+      this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, hint);
+    });
+  }
+
   private static bindLifecycleEvents(params: {
     serverWs: WebSocket;
     upstreamWs: WebSocket;
     coordinator: BargeInCoordinator;
     crisisHandler: CrisisHandler;
+    sidebandAgent: SidebandAgent;
     env: Env;
     sessionId: string;
     requestedUserId: string;
-    dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
-    getStudentName: () => string;
     sessionStartTime: number;
-    cbtFsm: CbtStateMachine;
     ctx?: ExecutionContext;
   }): void {
     const {
@@ -656,13 +524,11 @@ export class RelaySessionCoordinator {
       upstreamWs,
       coordinator,
       crisisHandler,
+      sidebandAgent,
       env,
       sessionId,
       requestedUserId,
-      dialogueHistory,
-      getStudentName,
       sessionStartTime,
-      cbtFsm,
       ctx,
     } = params;
 
@@ -670,15 +536,18 @@ export class RelaySessionCoordinator {
       coordinator.abort();
       RealtimeGatewayAdapter.safeClose(upstreamWs, event.code, event.reason);
 
+      const dialogueHistory = sidebandAgent.getDialogueHistory();
       if (dialogueHistory.length >= 1) {
         const closeTask = (async () => {
           try {
-            const studentName = getStudentName();
+            const studentName = sidebandAgent.getStudentName();
             const fullTranscript = dialogueHistory
               .map((d) => `${d.role === 'user' ? studentName || '学生' : '智能体'}: ${d.content}`)
               .join('\n');
             const duration = Math.max(1, Math.round((Date.now() - sessionStartTime) / 1000));
-            const stage = crisisHandler.isTriggered ? 'Crisis_Escalation' : cbtFsm.getStage();
+            const stage = crisisHandler.isTriggered
+              ? 'Crisis_Escalation'
+              : sidebandAgent.getCbtStage();
 
             await SessionReporter.generateAndPersist(
               env,

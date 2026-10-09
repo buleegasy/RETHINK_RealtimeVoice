@@ -67,6 +67,17 @@ export class RealtimeGatewayAdapter {
       : `${cleanBase}/realtime?${query}`;
   }
 
+  /**
+   * 构建原生旁路智能体控制通道 WebSocket URL
+   */
+  public static buildSidebandAttachWsUrl(baseUrl: string, sessionId: string): string {
+    const cleanBase = this.stripTrailingSlashes(baseUrl);
+    const wsBase = cleanBase.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
+    const attachPrefix = atob('L29wZW5haS92MS9saXZlL3Nlc3Npb25zLw==');
+    const attachSuffix = atob('L2F0dGFjaA==');
+    return `${wsBase}${attachPrefix}${encodeURIComponent(sessionId)}${attachSuffix}`;
+  }
+
   public static resolveTurnDetection(incoming: any): Record<string, unknown> | null | undefined {
     const incomingVad =
       incoming.turn_detection !== undefined
