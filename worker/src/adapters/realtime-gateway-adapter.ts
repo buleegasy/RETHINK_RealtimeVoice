@@ -56,15 +56,16 @@ export class RealtimeGatewayAdapter {
    */
   public static buildUpstreamWsUrl(baseUrl: string, model: string): string {
     const cleanBase = this.stripTrailingSlashes(baseUrl);
-    if (this.isDirectLiveEndpoint(cleanBase)) {
+    // 统一规范为 http:// 或 https://，保证 fetch() 发起 WebSocket Upgrade 握手时 scheme 合规
+    const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
+    if (this.isDirectLiveEndpoint(httpBase)) {
       const livePath = atob('L29wZW5haS92MS9saXZlL3Nlc3Npb25z');
-      const wsBase = cleanBase.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
-      return wsBase.endsWith(livePath) ? wsBase : `${wsBase}${livePath}`;
+      return httpBase.endsWith(livePath) ? httpBase : `${httpBase}${livePath}`;
     }
     const query = `model=${encodeURIComponent(model)}`;
-    return cleanBase.endsWith('/realtime')
-      ? `${cleanBase}?${query}`
-      : `${cleanBase}/realtime?${query}`;
+    return httpBase.endsWith('/realtime')
+      ? `${httpBase}?${query}`
+      : `${httpBase}/realtime?${query}`;
   }
 
   /**
@@ -106,6 +107,16 @@ export class RealtimeGatewayAdapter {
     return instructions;
   }
 
+  public static readonly DEFAULT_COMPANION_INSTRUCTIONS =
+    '你是专为高中生心理倾诉与陪伴的同龄伙伴 Re-think。\n' +
+    '你的用户都是希望心理倾诉的高中生。\n\n' +
+    '【核心交互准则】\n' +
+    '1. 身份对等：以同龄高中生身份齐平交流，绝不说教，绝不讨好，也绝不高高在上。\n' +
+    '2. 聚焦倾诉：专注倾听与安抚高中生心事与情绪，尽量避免讨论无关内容。\n' +
+    '3. 自然口语：全程使用贴近高中生的自然口语交流，禁止说你的模型名及公司名，禁止任何英文。\n' +
+    '4. 绝对极简（极其重要）：这是全双工实时通话，每次回复必须极其简短精炼，严格控制在 1 到 2 句话以内（30字以内）！语速稍快、轻快利落，共情或回应后立刻闭嘴倾听，把话语权交给同学。绝对严禁长篇大论、严禁列点清单、严禁说教、严禁一次性抛出长篇建议！\n' +
+    '5. 危机安全：当同学表达自杀、自残意念或危及生命安全时，以极度温和关切的态度稳住情绪，不可刺激或评判。';
+
   /**
    * 构造适配 Live 协议规范的 session.start 启动帧
    */
@@ -118,12 +129,10 @@ export class RealtimeGatewayAdapter {
     const model =
       upstreamModel && upstreamModel !== 'minimax-realtime' ? upstreamModel : defaultModel;
 
-    let instructions = '';
-    if (incoming && typeof incoming === 'object' && incoming.instructions) {
-      instructions = this.resolveInstructionsWithMemory(incoming.instructions, currentMemory);
-    } else {
-      instructions = this.resolveInstructionsWithMemory('', currentMemory);
-    }
+    const baseInstructions =
+      (incoming && typeof incoming === 'object' && incoming.instructions) ||
+      this.DEFAULT_COMPANION_INSTRUCTIONS;
+    const instructions = this.resolveInstructionsWithMemory(baseInstructions, currentMemory);
 
     const voice = incoming?.voice || incoming?.audio?.output?.voice || 'marin';
 
@@ -246,9 +255,16 @@ export class RealtimeGatewayAdapter {
       };
     }
 
+    // 过滤非直连模式特有的缓冲区操作与客户端开场白控制帧，避免上游网关报错 invalid_value
     if (
       eventData.type === 'input_audio_buffer.commit' ||
-      eventData.type === 'input_audio_buffer.clear'
+      eventData.type === 'input_audio_buffer.clear' ||
+      eventData.type === 'conversation.item.create' ||
+      eventData.type === 'conversation.item.truncate' ||
+      eventData.type === 'conversation.item.delete' ||
+      eventData.type === 'response.cancel' ||
+      eventData.type === 'response.create' ||
+      eventData.type === 'session.update'
     ) {
       return { transformed: null, shouldDrop: true };
     }
@@ -280,11 +296,12 @@ export class RealtimeGatewayAdapter {
       return { transformed: result };
     }
 
-    if (result.type === 'session.output_audio.delta' && result.delta) {
+    if (result.type === 'session.output_audio.delta' && (result.delta || result.audio)) {
       return {
         transformed: {
           type: 'response.audio.delta',
-          delta: result.delta,
+          delta: result.delta || result.audio,
+          item_id: result.item_id || result.item?.id,
         },
       };
     }
@@ -298,6 +315,44 @@ export class RealtimeGatewayAdapter {
             model: 'minimax-realtime',
             status: result.session?.status || 'active',
           },
+        },
+        secondaryEvent: result,
+      };
+    }
+
+    if (result.type === 'session.output_transcript.completed') {
+      return {
+        transformed: {
+          type: 'response.audio_transcript.done',
+          transcript: result.transcript || result.text || '',
+        },
+        secondaryEvent: result,
+      };
+    }
+
+    if (result.type === 'session.input_transcript.completed') {
+      return {
+        transformed: {
+          type: 'conversation.item.input_audio_transcription.completed',
+          transcript: result.transcript || result.text || '',
+        },
+        secondaryEvent: result,
+      };
+    }
+
+    if (result.type === 'session.input_audio.speech_started') {
+      return {
+        transformed: {
+          type: 'input_audio_buffer.speech_started',
+        },
+        secondaryEvent: result,
+      };
+    }
+
+    if (result.type === 'session.input_audio.speech_stopped') {
+      return {
+        transformed: {
+          type: 'input_audio_buffer.speech_stopped',
         },
         secondaryEvent: result,
       };

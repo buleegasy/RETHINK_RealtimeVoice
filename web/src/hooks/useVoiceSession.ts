@@ -162,13 +162,30 @@ export function useVoiceSession() {
             useTelemetryStore.getState().setIsConnected(true);
             useTelemetryStore.getState().setDuplexPhase('listening');
           },
-          onClose: () => {
+          onClose: (code?: number, reason?: string) => {
             useTelemetryStore.getState().setIsConnected(false);
             useTelemetryStore.getState().setDuplexPhase('idle');
-            if (useBoothStore.getState().sessionStatus === 'connected') {
-              endCallRef.current?.();
-            } else if (useBoothStore.getState().sessionStatus === 'connecting') {
-              setErrorMessage('语音服务器连接失败，请检查网络或稍后重试');
+            const currentStatus = useBoothStore.getState().sessionStatus;
+            if (currentStatus === 'connected') {
+              if (code && code !== 1000 && code !== 1005) {
+                const failReason = reason
+                  ? `连接中断: ${reason}`
+                  : `语音连接意外断开 (错误码: ${code})`;
+                setErrorMessage(failReason);
+                setSessionStatus('error');
+                setHookState('on_hook');
+                if (clientRef.current) {
+                  clientRef.current.disconnect();
+                  clientRef.current = null;
+                }
+                cleanupAudio();
+              } else {
+                endCallRef.current?.();
+              }
+            } else if (currentStatus === 'connecting') {
+              setErrorMessage(
+                reason ? `连接失败: ${reason}` : '语音服务器连接失败，请检查网络或稍后重试',
+              );
               setSessionStatus('error');
               setHookState('on_hook');
               if (clientRef.current) {
@@ -180,8 +197,11 @@ export function useVoiceSession() {
           },
           onError: (err: any) => {
             console.warn('[VoiceSession] 中继网络通知:', err);
+            const msg = err?.message || (typeof err === 'string' ? err : '语音中继链路异常');
             if (useBoothStore.getState().sessionStatus === 'connecting') {
-              setErrorMessage('语音中继链路异常，请确认网络环境或刷新重试');
+              setErrorMessage(`语音中继链路异常: ${msg}`);
+            } else if (useBoothStore.getState().sessionStatus === 'connected') {
+              setErrorMessage(`实时语音异常: ${msg}`);
             }
           },
           onAudioDelta: (chunk) => {

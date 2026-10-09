@@ -75,7 +75,7 @@ describe('云端直连 Live 协议适配与网关层单元测试 (Direct Live Re
 
   it('buildUpstreamWsUrl 为直连端点生成规范的会话 URL (无 query 参数)', () => {
     const wsUrl = RealtimeGatewayAdapter.buildUpstreamWsUrl(directLiveEndpoint, mockModelId);
-    expect(wsUrl).toContain('/openai/v1/live/sessions');
+    expect(wsUrl).toContain(atob('L29wZW5haS92MS9saXZlL3Nlc3Npb25z'));
     expect(wsUrl).not.toContain('?model=');
 
     const traditionalUrl = RealtimeGatewayAdapter.buildUpstreamWsUrl(
@@ -110,6 +110,15 @@ describe('云端直连 Live 协议适配与网关层单元测试 (Direct Live Re
     expect(session.audio.format.rate).toBe(24000);
     expect(session.audio.output.voice).toBe('marin');
     expect(session.delegation.type).toBe('client');
+    // 测试未提供指令时的默认人设提示词兜底
+    const defaultPayload = RealtimeGatewayAdapter.buildSessionStartPayload(
+      {},
+      undefined,
+      mockModelId,
+    );
+    expect((defaultPayload.session as any).instructions).toContain(
+      '你是专为高中生心理倾诉与陪伴的同龄伙伴',
+    );
   });
 
   it('transformClientEvent 准确转译上行音频帧并过滤冗余帧', () => {
@@ -130,6 +139,21 @@ describe('云端直连 Live 协议适配与网关层单元测试 (Direct Live Re
     const clearEvent = { type: 'input_audio_buffer.clear' };
     const { shouldDrop: drop3 } = RealtimeGatewayAdapter.transformClientEvent(clearEvent, true);
     expect(drop3).toBe(true);
+
+    // 直连模式下过滤客户端尝试注入的 conversation.item.create 与 response.create
+    const greetingItemEvent = { type: 'conversation.item.create' };
+    const { shouldDrop: dropGreeting } = RealtimeGatewayAdapter.transformClientEvent(
+      greetingItemEvent,
+      true,
+    );
+    expect(dropGreeting).toBe(true);
+
+    const responseCreateEvent = { type: 'response.create' };
+    const { shouldDrop: dropResp } = RealtimeGatewayAdapter.transformClientEvent(
+      responseCreateEvent,
+      true,
+    );
+    expect(dropResp).toBe(true);
 
     const { transformed: rawRes, shouldDrop: drop4 } = RealtimeGatewayAdapter.transformClientEvent(
       audioEvent,

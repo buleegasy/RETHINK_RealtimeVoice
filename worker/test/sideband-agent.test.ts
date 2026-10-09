@@ -219,6 +219,8 @@ describe('原生旁路监护智能体 (SidebandAgent) 单元测试', () => {
       'https://custom-gateway.io',
       'sess_active_456',
     );
-    expect(url).toBe('wss://custom-gateway.io/openai/v1/live/sessions/sess_active_456/attach');
+    expect(url).toBe(
+      `wss://custom-gateway.io${atob('L29wZW5haS92MS9saXZlL3Nlc3Npb25z')}/sess_active_456/attach`,
+    );
   });
 });

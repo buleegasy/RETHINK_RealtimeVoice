@@ -164,6 +164,15 @@ export class RelaySessionCoordinator {
 
       return new Response(null, { status: 101, webSocket: clientWs });
     } catch (err: any) {
+      console.error('[RelaySessionCoordinator] 启动会话异常:', err);
+      try {
+        serverWs.send(
+          RealtimeGatewayAdapter.formatRealtimeError(
+            'session_init_failed',
+            err?.message || '会话初始化异常',
+          ),
+        );
+      } catch {}
       RealtimeGatewayAdapter.safeClose(serverWs, 1011, 'Exception: ' + (err?.message || 'unknown'));
       return new Response(null, { status: 101, webSocket: clientWs });
     }
