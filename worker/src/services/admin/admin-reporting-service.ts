@@ -111,10 +111,14 @@ export class AdminReportingService {
           topConcerns: concernDistribution.slice(0, 3),
         },
         {
-          apiKey: env.OPENROUTER_API_KEY,
-          baseUrl: env.OPENROUTER_BASE_URL,
-          model: env.OPENROUTER_MODEL,
-          signal: AbortSignal.timeout(3000),
+          apiKey: env.MINIMAX_API_KEY || env.OPENROUTER_API_KEY,
+          baseUrl:
+            env.MINIMAX_BASE_URL ||
+            (env.MINIMAX_API_KEY
+              ? 'https://api.minimaxi.chat/v1/text/chatcompletion_v2'
+              : env.OPENROUTER_BASE_URL),
+          model: env.MINIMAX_API_KEY ? 'MiniMax-M3' : env.OPENROUTER_MODEL,
+          signal: AbortSignal.timeout(6000),
         },
       );
     } catch (err) {
@@ -216,9 +220,13 @@ export class AdminReportingService {
     }
 
     const newReport = await generateStructuredReportWithFlash(transcript, {
-      apiKey: env.OPENROUTER_API_KEY,
-      baseUrl: env.OPENROUTER_BASE_URL,
-      model: env.OPENROUTER_MODEL,
+      apiKey: env.MINIMAX_API_KEY || env.OPENROUTER_API_KEY,
+      baseUrl:
+        env.MINIMAX_BASE_URL ||
+        (env.MINIMAX_API_KEY
+          ? 'https://api.minimaxi.chat/v1/text/chatcompletion_v2'
+          : env.OPENROUTER_BASE_URL),
+      model: env.MINIMAX_API_KEY ? 'MiniMax-M3' : env.OPENROUTER_MODEL,
     });
 
     const mergedReport = {
@@ -238,6 +246,8 @@ export class AdminReportingService {
       keyTakeaways: newReport.keyTakeaways,
       homeworkAction: newReport.homeworkAction,
       actionItems: newReport.actionItems,
+      deidentifiedTranscript:
+        newReport.deidentifiedTranscript || existingReport.deidentifiedTranscript || transcript,
       evaluatedBy: 'DeepSeek V4 Flash',
       reEvaluatedAt: Date.now(),
     };

@@ -59,7 +59,7 @@ export async function evaluateTranscriptWithMiniMax(
 
     const payload = isMiniMax
       ? {
-          model: 'abab6.5s-chat',
+          model: 'MiniMax-M3',
           messages: [{ role: 'user', content: prompt }],
         }
       : {

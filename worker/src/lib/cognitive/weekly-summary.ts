@@ -1,5 +1,5 @@
 import type { FlashOptions } from './types';
-import { resolveReportingModel } from './constants';
+import { MINIMAX_M3_MODEL, MINIMAX_API_URL, resolveReportingModel } from './constants';
 
 export async function generateWeeklySummaryDeepSeekV4Flash(
   stats: {
@@ -30,9 +30,20 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
     return fallback;
   }
 
-  const baseUrl = (options?.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-  const model = resolveReportingModel(options?.model);
-  const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+  const isMiniMaxKey =
+    options.apiKey.startsWith('sk-api--') || Boolean(options.baseUrl?.includes('minimax'));
+  const baseUrl = (
+    options.baseUrl || (isMiniMaxKey ? MINIMAX_API_URL : 'https://openrouter.ai/api/v1')
+  ).replace(/\/+$/, '');
+  const model = options.model
+    ? resolveReportingModel(options.model)
+    : isMiniMaxKey
+      ? MINIMAX_M3_MODEL
+      : resolveReportingModel();
+  const endpoint =
+    baseUrl.endsWith('/chat/completions') || baseUrl.includes('chatcompletion_v2')
+      ? baseUrl
+      : `${baseUrl}/chat/completions`;
 
   const prompt = `你是经验丰富的校园心理专职督导老师。请结合本周校园倾诉的整体情况，撰写一段20-50字的大屏“本周心境与趋势观察”。
 
@@ -48,21 +59,29 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
 `;
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${options.apiKey}`,
+    };
+    if (!isMiniMaxKey) {
+      headers['HTTP-Referer'] = 'https://rethink.local';
+      headers['X-Title'] = 'RETHINK Weekly Summary';
+    }
+
+    const reqBody: any = {
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+    };
+    if (!isMiniMaxKey) {
+      reqBody.max_tokens = 120;
+    }
+
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${options.apiKey}`,
-        'HTTP-Referer': 'https://rethink.local',
-        'X-Title': 'RETHINK Weekly Summary',
-      },
+      headers,
       signal: options?.signal,
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: 120,
-      }),
+      body: JSON.stringify(reqBody),
     });
 
     if (res.ok) {

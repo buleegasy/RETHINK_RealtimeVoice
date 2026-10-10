@@ -153,18 +153,26 @@ export class SessionReporter {
       }
     }
 
-    const openRouterKey =
+    const reportingKey =
+      env.MINIMAX_API_KEY ||
       env.OPENROUTER_API_KEY ||
       env.REALTIME_UPSTREAM_KEY ||
       env.MINIMAX_REALTIME_KEY ||
-      env.APIYI_API_KEY ||
-      env.MINIMAX_API_KEY;
+      env.APIYI_API_KEY;
+
+    const isMiniMax = Boolean(
+      reportingKey && (reportingKey === env.MINIMAX_API_KEY || reportingKey.startsWith('sk-api--')),
+    );
 
     // 1. 深度评估简报生成
     const report = await generateStructuredReportWithFlash(transcriptText, {
-      apiKey: openRouterKey,
-      baseUrl: env.OPENROUTER_BASE_URL,
-      model: env.OPENROUTER_MODEL || DEEPSEEK_V4_FLASH_MODEL,
+      apiKey: reportingKey,
+      baseUrl:
+        env.MINIMAX_BASE_URL ||
+        (isMiniMax
+          ? 'https://api.minimaxi.chat/v1/text/chatcompletion_v2'
+          : env.OPENROUTER_BASE_URL),
+      model: isMiniMax ? 'MiniMax-M3' : env.OPENROUTER_MODEL || DEEPSEEK_V4_FLASH_MODEL,
     });
 
     const isCrisis =
@@ -230,7 +238,7 @@ export class SessionReporter {
     // 6. 整合情景记忆
     await consolidateDialogueMemory(env, {
       userId: userId || effectiveName || sessionId,
-      openRouterKey,
+      openRouterKey: reportingKey,
       dialogueTurns,
       transcriptText,
     });

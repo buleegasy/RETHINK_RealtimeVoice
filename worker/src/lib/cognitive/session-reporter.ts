@@ -1,5 +1,10 @@
 import type { FlashOptions, StructuredSessionReport } from './types';
-import { MINIMAX_TEXT_01_MODEL, resolveReportingModel, parseJsonSafe } from './constants';
+import {
+  MINIMAX_M3_MODEL,
+  MINIMAX_API_URL,
+  resolveReportingModel,
+  parseJsonSafe,
+} from './constants';
 import { evaluateTranscriptRuleBased } from '../minimax-evaluator';
 
 export async function generateStructuredReportWithFlash(
@@ -17,9 +22,20 @@ export async function generateStructuredReportWithFlash(
     };
   }
 
-  const baseUrl = (options?.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-  const model = resolveReportingModel(options?.model);
-  const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+  const isMiniMaxKey =
+    options.apiKey.startsWith('sk-api--') || Boolean(options.baseUrl?.includes('minimax'));
+  const baseUrl = (
+    options.baseUrl || (isMiniMaxKey ? MINIMAX_API_URL : 'https://openrouter.ai/api/v1')
+  ).replace(/\/+$/, '');
+  const model = options.model
+    ? resolveReportingModel(options.model)
+    : isMiniMaxKey
+      ? MINIMAX_M3_MODEL
+      : resolveReportingModel();
+  const endpoint =
+    baseUrl.endsWith('/chat/completions') || baseUrl.includes('chatcompletion_v2')
+      ? baseUrl
+      : `${baseUrl}/chat/completions`;
 
   const prompt = `你是经验丰富的校园心理专职督导老师。请针对以下学生实际倾诉对话文本，为学校心理专职教师撰写一份自然、客观、求实的“来访情绪评估简报”。
 
@@ -51,22 +67,30 @@ export async function generateStructuredReportWithFlash(
 """${cleanTranscript.slice(0, 4000)}"""`;
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${options.apiKey}`,
+    };
+    if (!isMiniMaxKey) {
+      headers['HTTP-Referer'] = 'https://rethink.local';
+      headers['X-Title'] = 'RETHINK Session Reporter';
+    }
+
+    const reqBody: any = {
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+    };
+    if (!isMiniMaxKey) {
+      reqBody.max_tokens = 2500;
+      reqBody.response_format = { type: 'json_object' };
+    }
+
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${options.apiKey}`,
-        'HTTP-Referer': 'https://rethink.local',
-        'X-Title': 'RETHINK Session Reporter',
-      },
+      headers,
       signal: options?.signal,
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        max_tokens: 2500,
-        ...(model !== MINIMAX_TEXT_01_MODEL ? { response_format: { type: 'json_object' } } : {}),
-      }),
+      body: JSON.stringify(reqBody),
     });
 
     if (!res.ok) {

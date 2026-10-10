@@ -1,5 +1,7 @@
 export const DEEPSEEK_V4_FLASH_MODEL = 'deepseek/deepseek-v4-flash';
+export const MINIMAX_M3_MODEL = 'MiniMax-M3';
 export const MINIMAX_TEXT_01_MODEL = 'minimax/minimax-01';
+export const MINIMAX_API_URL = 'https://api.minimaxi.chat/v1/text/chatcompletion_v2';
 const RUNTIME_FLASH_MODEL = atob('Z29vZ2xlL2dlbWluaS0yLjUtZmxhc2g=');
 
 export function resolveFlashModel(override?: string): string {
