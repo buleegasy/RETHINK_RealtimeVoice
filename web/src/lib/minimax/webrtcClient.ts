@@ -92,6 +92,7 @@ export class MiniMaxWebRtcClient {
         username: this.options.username,
         model: this.options.model || 'minimax-realtime',
         voice: this.options.voice || DEFAULT_VOICE,
+        instructions: this.options.sessionConfig?.instructions || DEFAULT_VOICE_INSTRUCTIONS,
       };
 
       let remoteSdp = '';
@@ -234,7 +235,6 @@ export class MiniMaxWebRtcClient {
     this.sendEvent({
       type: 'session.update',
       session: {
-        type: 'realtime',
         modalities: config.modalities || ['audio', 'text'],
         instructions: config.instructions || DEFAULT_VOICE_INSTRUCTIONS,
         voice: config.voice || DEFAULT_VOICE,
@@ -398,7 +398,8 @@ export class MiniMaxWebRtcClient {
     this.sendEvent({
       type: 'response.create',
       response: {
-        instructions: `请以专为高中生心理倾诉的伙伴 Re-think 身份，主动向同学说开场问候语："${OPENING_GREETING}"。语气温暖轻快，一句话打招呼即可。`,
+        modalities: ['audio', 'text'],
+        instructions: `你必须严格只字面说：“${OPENING_GREETING}”，语气温暖轻快自然，绝对禁止添加任何多余的开场白、其他字句或解释！`,
       },
     });
   }

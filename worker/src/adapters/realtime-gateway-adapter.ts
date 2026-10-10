@@ -224,9 +224,11 @@ export class RealtimeGatewayAdapter {
           },
         },
       };
-      if (rawSession.instructions) {
-        sessionConfig.instructions = rawSession.instructions;
-      }
+      const resolvedInstructions =
+        (rawSession.instructions as string) ||
+        (sessionParams?.instructions as string) ||
+        this.resolveInstructionsWithMemory(this.DEFAULT_COMPANION_INSTRUCTIONS);
+      sessionConfig.instructions = resolvedInstructions;
 
       // RFC 4566 规范：SDP 每一行及末尾必须以 CRLF (\r\n) 结尾，防止上游 Pion WebRTC 栈报 EOF 反序列化错误
       const normalizedSdp = sdpOffer.replace(/\r?\n/g, '\r\n').trimEnd() + '\r\n';
@@ -386,7 +388,8 @@ export class RealtimeGatewayAdapter {
     '6. 纯语音输出规范：严禁输出任何 Markdown 格式符号（如加粗、列表、标题符号）、严禁输出 Emoji 表情或代码块，确保语音合成平滑自然。\n' +
     '7. 嘈杂环境与弱信号应对：若因环境嘈杂或同学声音微弱导致没听清，用极简日常口语温和确认（如“刚才没太听清，可以再说一遍吗？”），绝不凭空臆测。\n' +
     '8. 单轮单问：每轮至多提一个简短关切或开放式问题，绝不连续提问。\n' +
-    '9. 危机安全：当同学表达自杀、自残意念或危及生命安全时，以极度温和关切的态度稳住情绪，不可刺激或评判。';
+    '9. 危机安全：当同学表达自杀、自残意念或危及生命安全时，以极度温和关切的态度稳住情绪，不可刺激或评判。\n' +
+    '10. 开场问候准则：通话刚建立且你进入会话时，你的第一句话必须主动且仅字面说：“你好，我是Rethink，今天有什么想聊的吗”。说完后立即保持倾听。';
 
   /**
    * 构造适配 Live 协议规范的 session.start 启动帧

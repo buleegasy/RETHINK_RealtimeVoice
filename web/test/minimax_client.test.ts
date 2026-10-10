@@ -79,7 +79,7 @@ describe('MiniMaxRealtimeClient (原生协议客户端验证)', () => {
 
     const greetingMsg = JSON.parse(ws.sentMessages[2]);
     expect(greetingMsg.type).toBe('response.create');
-    expect(greetingMsg.response.instructions).toContain('你好，欢迎来到Rethink');
+    expect(greetingMsg.response.instructions).toContain('你好，我是Rethink，今天有什么想聊的吗');
 
     client.disconnect();
   });
