@@ -220,6 +220,9 @@ export class RealtimeGatewayAdapter {
       Authorization: `Bearer ${tokenRes.clientSecret}`,
       'Content-Type': 'application/sdp',
     };
+    if (this.isDirectLiveEndpoint(config.upstreamBaseUrl)) {
+      headers['api-key'] = config.upstreamKey;
+    }
 
     try {
       const res = await fetch(endpoint, {
