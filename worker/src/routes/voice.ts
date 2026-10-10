@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, PersistSessionPayload, KnowledgeQueryPayload } from '../types';
 import { VoiceService } from '../services/voice-service';
+import { RealtimeGatewayAdapter } from '../adapters/realtime-gateway-adapter';
 import { verifyAuthToken, resolveJwtSecret, type AuthTokenPayload } from '../lib/auth-crypto';
 
 export { BargeInCoordinator } from '../services/voice-service';
@@ -79,12 +80,25 @@ voiceRouter.post('/webrtc/session', async (c) => {
     );
   }
 
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  const model = body.model || 'minimax-realtime';
+  const config = RealtimeGatewayAdapter.resolveGatewayConfig(c.env || {}, model);
+  const ephemeral = await RealtimeGatewayAdapter.createEphemeralToken(config);
+
   return c.json({
     ok: true,
     transport: 'webrtc',
+    clientSecret: ephemeral.clientSecret,
+    callsUrl: ephemeral.callsUrl,
     sessionConfig: {
-      model: 'minimax-realtime',
-      voice: 'maple',
+      model,
+      voice: body.voice || 'marin',
     },
   });
 });

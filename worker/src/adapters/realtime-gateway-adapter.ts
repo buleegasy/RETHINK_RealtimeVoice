@@ -81,16 +81,70 @@ export class RealtimeGatewayAdapter {
   }
 
   /**
+   * 构建上游 WebRTC 临时密钥 (client_secrets) 签发端点 URL
+   */
+  public static buildUpstreamClientSecretsUrl(baseUrl: string): string {
+    const cleanBase = this.stripTrailingSlashes(baseUrl);
+    const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
+    const secretsPath = atob('L29wZW5haS92MS9yZWFsdGltZS9jbGllbnRfc2VjcmV0cw==');
+    return httpBase.endsWith(secretsPath) ? httpBase : `${httpBase}${secretsPath}`;
+  }
+
+  /**
+   * 向云端上游网关申请短期受限的 WebRTC 临时会话密钥 (Ephemeral Token)
+   */
+  public static async createEphemeralToken(
+    config: RealtimeGatewayConfig,
+    sessionParams?: Record<string, unknown>,
+  ): Promise<{
+    ok: boolean;
+    clientSecret?: string;
+    callsUrl?: string;
+    error?: string;
+  }> {
+    if (!config.upstreamKey) {
+      return { ok: false, error: '未配置上游访问凭证' };
+    }
+
+    const secretsUrl = this.buildUpstreamClientSecretsUrl(config.upstreamBaseUrl);
+    const callsUrl = this.buildUpstreamWebRtcUrl(config.upstreamBaseUrl, config.upstreamModel);
+
+    try {
+      const res = await fetch(secretsUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.upstreamKey}`,
+          'api-key': config.upstreamKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(sessionParams || { session: { model: config.upstreamModel } }),
+      });
+
+      if (res.ok) {
+        const data: any = await res.json().catch(() => ({}));
+        const clientSecret = data?.client_secret?.value || data?.client_secret || data?.value;
+        if (clientSecret) {
+          return { ok: true, clientSecret, callsUrl };
+        }
+      }
+      return { ok: false, error: `Upstream returned status ${res.status}` };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Network error' };
+    }
+  }
+
+  /**
    * 构建上游 WebRTC SDP 协商端点 URL
    */
   public static buildUpstreamWebRtcUrl(baseUrl: string, model: string): string {
     const cleanBase = this.stripTrailingSlashes(baseUrl);
     const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
+    const query = `model=${encodeURIComponent(model)}`;
     if (this.isDirectLiveEndpoint(httpBase)) {
       const callsPath = atob('L29wZW5haS92MS9yZWFsdGltZS9jYWxscw==');
-      return httpBase.endsWith(callsPath) ? httpBase : `${httpBase}${callsPath}`;
+      const base = httpBase.endsWith(callsPath) ? httpBase : `${httpBase}${callsPath}`;
+      return `${base}?${query}`;
     }
-    const query = `model=${encodeURIComponent(model)}`;
     return httpBase.endsWith('/realtime')
       ? `${httpBase}?${query}`
       : `${httpBase}/realtime?${query}`;
