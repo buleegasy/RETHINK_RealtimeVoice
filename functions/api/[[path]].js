@@ -25,7 +25,13 @@ export async function onRequest(context) {
       return app.fetch(request, env, context);
     }
     const targetUrl = new URL(url.pathname + url.search, env.WORKER_ORIGIN);
-    const upstreamRes = await fetch(targetUrl.toString(), request);
+    let upstreamRes;
+    try {
+      upstreamRes = await fetch(targetUrl.toString(), request);
+    } catch (fetchErr) {
+      console.warn('[PagesFunctions] 代理至上游网关异常，自动回退本地边缘执行:', fetchErr);
+      return app.fetch(request, env, context);
+    }
     if (upstreamRes.status === 101 && upstreamRes.webSocket) {
       const pair = new WebSocketPair();
       const [clientWs, serverWs] = Object.values(pair);

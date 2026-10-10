@@ -91,8 +91,9 @@ export class MiniMaxRealtimeClient {
 
       ws.onopen = () => {
         console.log('[MiniMaxClient] 实时语音链路已建立');
-        this.isConnected = true;
         const isReconnection = this.reconnectAttempts > 0;
+        this.isConnected = true;
+        this.reconnectAttempts = 0;
         this.flushQueue();
         this.sendSessionUpdate();
 
@@ -103,6 +104,9 @@ export class MiniMaxRealtimeClient {
 
         this.startKeepalive();
         this.callbacks.onOpen?.();
+        if (isReconnection) {
+          this.callbacks.onReconnected?.();
+        }
       };
 
       ws.onmessage = (event) => {
@@ -120,16 +124,23 @@ export class MiniMaxRealtimeClient {
         );
         this.isConnected = false;
         this.stopKeepalive();
-        this.callbacks.onClose?.(event.code, event.reason);
 
-        if (!this.isExplicitlyClosed) {
-          this.scheduleReconnect();
+        const isNormalClose = event.code === 1000 || event.code === 1005;
+        if (this.isExplicitlyClosed || isNormalClose) {
+          this.callbacks.onClose?.(event.code, event.reason);
+        } else {
+          // 非正常断开（如大陆网络常见 1006 异常或短时信号切换），进入自适应重连
+          this.scheduleReconnect(event.code, event.reason);
         }
       };
     } catch (err) {
       console.error('[MiniMaxClient] 初始化失败:', err);
       this.callbacks.onError?.(err);
-      this.scheduleReconnect();
+      if (!this.isExplicitlyClosed) {
+        this.scheduleReconnect(1006, '初始化失败');
+      } else {
+        this.callbacks.onClose?.(1006, '连接初始化失败');
+      }
     }
   }
 
@@ -550,8 +561,8 @@ export class MiniMaxRealtimeClient {
         this.pongTimeoutTimer = setTimeout(() => {
           console.warn('[MiniMaxClient] 心跳无响应 (Pong Timeout)，判定为死连接，主动重连');
           this.cleanupSocket();
-          this.scheduleReconnect();
-        }, 10000);
+          this.scheduleReconnect(1006, '心跳超时无响应');
+        }, 15000);
       }
     }, 4000);
   }
@@ -567,16 +578,24 @@ export class MiniMaxRealtimeClient {
     }
   }
 
-  private scheduleReconnect(): void {
-    const maxAttempts = this.options.maxReconnectAttempts ?? 3;
+  private scheduleReconnect(lastCode?: number, lastReason?: string): void {
+    const maxAttempts = this.options.maxReconnectAttempts ?? 6;
     if (this.reconnectAttempts >= maxAttempts) {
       console.error('[MiniMaxClient] 已达最大重连次数，停止重连');
+      this.callbacks.onMaxReconnectFailed?.();
+      this.callbacks.onClose?.(lastCode || 1006, lastReason || '重连次数已达上限');
       return;
     }
 
     this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 8000);
-    console.log(`[MiniMaxClient] 将在 ${delay}ms 后进行第 ${this.reconnectAttempts} 次重连...`);
+    const baseDelay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts - 1), 6000);
+    const jitter = Math.random() * 400;
+    const delay = Math.round(baseDelay + jitter);
+    console.log(
+      `[MiniMaxClient] 将在 ${delay}ms 后进行第 ${this.reconnectAttempts}/${maxAttempts} 次重连...`,
+    );
+
+    this.callbacks.onReconnecting?.(this.reconnectAttempts, maxAttempts, delay);
 
     this.reconnectTimer = setTimeout(() => {
       this.connect();

@@ -21,8 +21,11 @@ export class PlaybackQueue {
   public stopPlaybackTimer: ReturnType<typeof setTimeout> | null = null;
   private endDrainTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private readonly JITTER_TARGET_SEC: number = 0.04;
+  private readonly MIN_TARGET_SEC: number = 0.04;
+  private readonly MAX_TARGET_SEC: number = 0.14;
   private readonly JITTER_REBUFFER_SEC: number = 0.02;
+  private adaptiveTargetSec: number = 0.06;
+  private consecutiveSmoothChunks: number = 0;
 
   constructor(private listener?: PlaybackStateListener) {}
 
@@ -36,26 +39,29 @@ export class PlaybackQueue {
     this.listener?.onPlaybackStateChange(speaking);
   }
 
+  public updateNetworkQuality(rttMs: number): void {
+    if (rttMs > 240) {
+      this.adaptiveTargetSec = Math.min(this.MAX_TARGET_SEC, Math.max(this.adaptiveTargetSec, 0.1));
+    } else if (rttMs > 120) {
+      this.adaptiveTargetSec = Math.min(
+        this.MAX_TARGET_SEC,
+        Math.max(this.adaptiveTargetSec, 0.08),
+      );
+    }
+  }
+
   public isPlaybackActive(): boolean {
     return this.isSpeaking || this.scheduledSources.length > 0 || this.jitterBuffer.length > 0;
   }
 
-  public getJitterMetrics(): {
-    bufferedSec: number;
-    bufferedMs: number;
-    isBuffering: boolean;
-    queuedBuffers: number;
-    scheduledCount: number;
-    targetSec: number;
-    rebufferSec: number;
-  } {
+  public getJitterMetrics() {
     return {
       bufferedSec: Number(this.jitterBufferedSec.toFixed(3)),
       bufferedMs: Math.round(this.jitterBufferedSec * 1000),
       isBuffering: this.isJitterBuffering,
       queuedBuffers: this.jitterBuffer.length,
       scheduledCount: this.scheduledSources.length,
-      targetSec: this.JITTER_TARGET_SEC,
+      targetSec: Number(this.adaptiveTargetSec.toFixed(3)),
       rebufferSec: this.JITTER_REBUFFER_SEC,
     };
   }
@@ -91,7 +97,7 @@ export class PlaybackQueue {
     if (
       this.scheduledSources.length > 0 ||
       !this.isJitterBuffering ||
-      this.jitterBufferedSec >= this.JITTER_TARGET_SEC
+      this.jitterBufferedSec >= this.adaptiveTargetSec
     ) {
       this.isJitterBuffering = false;
       this.flushJitterBuffer(ctx, outputGainNode, analyserNode);
@@ -122,7 +128,15 @@ export class PlaybackQueue {
 
       const now = ctx.currentTime;
       if (this.nextPlayTime < now) {
+        this.adaptiveTargetSec = Math.min(this.MAX_TARGET_SEC, this.adaptiveTargetSec + 0.02);
+        this.consecutiveSmoothChunks = 0;
         this.nextPlayTime = now + 0.005;
+      } else {
+        this.consecutiveSmoothChunks++;
+        if (this.consecutiveSmoothChunks > 30 && this.adaptiveTargetSec > this.MIN_TARGET_SEC) {
+          this.adaptiveTargetSec = Math.max(this.MIN_TARGET_SEC, this.adaptiveTargetSec - 0.005);
+          this.consecutiveSmoothChunks = 0;
+        }
       }
 
       if (this.playbackStartCtxTime === null || this.scheduledSources.length === 0) {
@@ -148,7 +162,7 @@ export class PlaybackQueue {
               this.setAiSpeaking(false);
               this.isJitterBuffering = true;
             }
-          }, 100);
+          }, 180);
         }
       };
     }
@@ -220,11 +234,15 @@ export class PlaybackQueue {
     this.pendingCleanupSources.push(...sourcesToStop);
     for (const s of sourcesToStop) s.onended = null;
 
-    if ((sourcesToStop.length === 0 && !wasSpeaking) || fadeDurationMs <= 0) {
+    const restoreGain = () => {
       try {
         outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
         outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
       } catch {}
+    };
+
+    if ((sourcesToStop.length === 0 && !wasSpeaking) || fadeDurationMs <= 0) {
+      restoreGain();
       for (const s of sourcesToStop) {
         try {
           s.stop();
@@ -266,11 +284,8 @@ export class PlaybackQueue {
       }
       this.pendingCleanupSources = [];
       if (this.playbackEpoch === timerEpoch) {
-        try {
-          outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
-          outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
-          this.nextPlayTime = ctx.currentTime;
-        } catch {}
+        restoreGain();
+        this.nextPlayTime = ctx.currentTime;
       }
     }, fadeDurationMs + 20);
   }

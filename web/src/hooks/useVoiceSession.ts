@@ -171,11 +171,29 @@ export function useVoiceSession() {
             audioGraph.setAiThinking(false);
             audioGraph.setAiSpeaking(false);
           },
+          onReconnecting: (attempt: number, maxAttempts: number) => {
+            useTelemetryStore.getState().setIsConnected(false);
+            setSessionStatus('connecting');
+            setErrorMessage(`网络波动，正在重新建立语音链路 (${attempt}/${maxAttempts})...`);
+          },
+          onReconnected: () => {
+            setSessionStatus('connected');
+            setHookState('connected');
+            setDuplexPhase('listening');
+            setErrorMessage(null);
+            useTelemetryStore.getState().setIsConnected(true);
+            useTelemetryStore.getState().setDuplexPhase('listening');
+            audioGraph.setAiThinking(false);
+            audioGraph.setAiSpeaking(false);
+          },
+          onMaxReconnectFailed: () => {
+            setErrorMessage('网络信号持续不稳定，已达最大重试上限，请检查网络后重试');
+          },
           onClose: (code?: number, reason?: string) => {
             useTelemetryStore.getState().setIsConnected(false);
             useTelemetryStore.getState().setDuplexPhase('idle');
             const currentStatus = useBoothStore.getState().sessionStatus;
-            if (currentStatus === 'connected') {
+            if (currentStatus === 'connected' || currentStatus === 'connecting') {
               if (code && code !== 1000 && code !== 1005) {
                 const failReason = reason
                   ? `连接中断: ${reason}`
@@ -191,17 +209,6 @@ export function useVoiceSession() {
               } else {
                 endCallRef.current?.();
               }
-            } else if (currentStatus === 'connecting') {
-              setErrorMessage(
-                reason ? `连接失败: ${reason}` : '语音服务器连接失败，请检查网络或稍后重试',
-              );
-              setSessionStatus('error');
-              setHookState('on_hook');
-              if (clientRef.current) {
-                clientRef.current.disconnect();
-                clientRef.current = null;
-              }
-              cleanupAudio();
             }
           },
           onError: (err: any) => {
@@ -330,6 +337,7 @@ export function useVoiceSession() {
           },
           onPingPong: (rttMs) => {
             useTelemetryStore.getState().updateRtt(rttMs);
+            audioGraph.updateNetworkQuality(rttMs);
           },
           onTTFT: (ttftMs) => {
             useTelemetryStore.getState().updateTtft(ttftMs);

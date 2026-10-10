@@ -204,4 +204,17 @@ describe('AudioGraphService 打断音量渐弱与状态管理验证', () => {
     expect(() => service.cleanup()).not.toThrow();
     expect(stopRecordingSpy).toHaveBeenCalled();
   });
+
+  it('updateNetworkQuality 在高延迟网络下应自适应提升目标抖动缓冲水位', () => {
+    const initialMetrics = service.getJitterMetrics();
+    expect(initialMetrics.targetSec).toBe(0.06);
+
+    // 中等网络时延 (150ms)
+    service.updateNetworkQuality(150);
+    expect(service.getJitterMetrics().targetSec).toBe(0.08);
+
+    // 恶劣/跨网段高时延 (260ms)
+    service.updateNetworkQuality(260);
+    expect(service.getJitterMetrics().targetSec).toBe(0.1);
+  });
 });

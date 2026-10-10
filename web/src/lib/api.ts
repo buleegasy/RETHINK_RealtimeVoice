@@ -33,9 +33,15 @@ export function getWsUrl(options?: {
     params.set('token', token);
   }
 
-  if (WORKER_ORIGIN) {
+  const customOrigin =
+    typeof window !== 'undefined' && window.localStorage
+      ? window.localStorage.getItem('rethink_custom_worker_origin')
+      : null;
+  const activeOrigin = customOrigin || WORKER_ORIGIN;
+
+  if (activeOrigin) {
     try {
-      const parsed = new URL(WORKER_ORIGIN);
+      const parsed = new URL(activeOrigin);
       const protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
       return `${protocol}//${parsed.host}/api/voice/ws?${params.toString()}`;
     } catch {}
@@ -113,16 +119,22 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 
   const primaryUrl = targetPath;
 
+  const customOrigin =
+    typeof window !== 'undefined' && window.localStorage
+      ? window.localStorage.getItem('rethink_custom_worker_origin')
+      : null;
+  const activeOrigin = customOrigin || WORKER_ORIGIN;
+
   try {
     const res = await fetch(primaryUrl, options);
-    if (!res.ok && res.status >= 500 && WORKER_ORIGIN && primaryUrl === targetPath) {
-      return await fetch(`${WORKER_ORIGIN}${targetPath}`, options);
+    if (!res.ok && res.status >= 500 && activeOrigin && primaryUrl === targetPath) {
+      return await fetch(`${activeOrigin}${targetPath}`, options);
     }
     return res;
   } catch (err) {
-    if (WORKER_ORIGIN && primaryUrl !== `${WORKER_ORIGIN}${targetPath}`) {
+    if (activeOrigin && primaryUrl !== `${activeOrigin}${targetPath}`) {
       try {
-        return await fetch(`${WORKER_ORIGIN}${targetPath}`, options);
+        return await fetch(`${activeOrigin}${targetPath}`, options);
       } catch (fallbackErr) {
         console.warn('[ApiFetch] Worker 备用端点请求失败:', fallbackErr);
         throw err;

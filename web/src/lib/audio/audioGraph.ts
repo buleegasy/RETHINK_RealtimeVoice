@@ -92,6 +92,10 @@ export class AudioGraphService {
     return this.playbackQueue.getJitterMetrics();
   }
 
+  public updateNetworkQuality(rttMs: number): void {
+    this.playbackQueue.updateNetworkQuality(rttMs);
+  }
+
   public setAiSpeaking(speaking: boolean): void {
     this.playbackQueue.setAiSpeaking(speaking);
     if (!speaking) {

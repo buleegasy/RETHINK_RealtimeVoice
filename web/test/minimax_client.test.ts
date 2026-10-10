@@ -381,4 +381,46 @@ describe('MiniMaxRealtimeClient (原生协议客户端验证)', () => {
 
     client.disconnect();
   });
+
+  it('网络抖动非正常断开 (1006) 时应触发 onReconnecting 而非直接终止 onClose', async () => {
+    const onReconnecting = vi.fn();
+    const onClose = vi.fn();
+    const client = new MiniMaxRealtimeClient({
+      relayUrl: 'ws://localhost:8787/api/voice/ws',
+      callbacks: { onReconnecting, onClose },
+    });
+
+    client.connect();
+    await new Promise((r) => setTimeout(r, 15));
+    const ws = (client as any).ws as MockWebSocket;
+
+    // 模拟网络丢包导致的 1006 异常关闭
+    ws.close(1006, 'Abnormal network reset');
+
+    expect(onReconnecting).toHaveBeenCalledTimes(1);
+    expect(onReconnecting).toHaveBeenCalledWith(1, 6, expect.any(Number));
+    expect(onClose).not.toHaveBeenCalled();
+
+    client.disconnect();
+  });
+
+  it('正常挂机 (1000) 时应立即触发 onClose 且不触发重连', async () => {
+    const onReconnecting = vi.fn();
+    const onClose = vi.fn();
+    const client = new MiniMaxRealtimeClient({
+      relayUrl: 'ws://localhost:8787/api/voice/ws',
+      callbacks: { onReconnecting, onClose },
+    });
+
+    client.connect();
+    await new Promise((r) => setTimeout(r, 15));
+    const ws = (client as any).ws as MockWebSocket;
+
+    ws.close(1000, 'Normal hangup');
+
+    expect(onClose).toHaveBeenCalledWith(1000, 'Normal hangup');
+    expect(onReconnecting).not.toHaveBeenCalled();
+
+    client.disconnect();
+  });
 });

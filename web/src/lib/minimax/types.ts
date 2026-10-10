@@ -78,4 +78,7 @@ export interface MiniMaxClientCallbacks {
   }) => void;
   onPingPong?: (rttMs: number) => void;
   onTTFT?: (ttftMs: number) => void;
+  onReconnecting?: (attempt: number, maxAttempts: number, delayMs: number) => void;
+  onReconnected?: () => void;
+  onMaxReconnectFailed?: () => void;
 }
