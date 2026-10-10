@@ -39,7 +39,7 @@ export interface BoothState {
   setActiveTranscript: (
     transcript:
       | { user?: string; assistant?: string }
-      | ((prev: { user: string; assistant: string }) => { user: string; assistant: string })
+      | ((prev: { user: string; assistant: string }) => { user: string; assistant: string }),
   ) => void;
   addDialogueTurn: (turn: DialogueTurn) => void;
   setLatestReport: (report: SanitizedCbtReport | null) => void;
@@ -87,9 +87,25 @@ export const useBoothStore = create<BoothState>((set) => ({
           : { ...state.activeTranscript, ...transcript },
     })),
   addDialogueTurn: (turn) =>
-    set((state) => ({
-      dialogueHistory: [...state.dialogueHistory, turn],
-    })),
+    set((state) => {
+      const existingIdx = state.dialogueHistory.findIndex((t) => t.id === turn.id);
+      let list: DialogueTurn[];
+      if (existingIdx >= 0) {
+        list = [...state.dialogueHistory];
+        list[existingIdx] = turn;
+      } else {
+        list = [...state.dialogueHistory, turn];
+      }
+      const updated = list.sort((a, b) => {
+        if (a.timestamp !== b.timestamp) {
+          return a.timestamp - b.timestamp;
+        }
+        if (a.role === 'user' && b.role !== 'user') return -1;
+        if (a.role !== 'user' && b.role === 'user') return 1;
+        return 0;
+      });
+      return { dialogueHistory: updated };
+    }),
   setLatestReport: (latestReport) => set({ latestReport }),
   setReportModalOpen: (isReportModalOpen) => set({ isReportModalOpen }),
   setCrisisOverlayOpen: (isCrisisOverlayOpen) => set({ isCrisisOverlayOpen }),

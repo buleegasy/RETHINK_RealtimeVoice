@@ -56,6 +56,10 @@ export function useVoiceSession() {
   const telemetryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string>('');
   const endCallRef = useRef<(() => Promise<void>) | null>(null);
+  const userSpeechStartTimeRef = useRef<number | null>(null);
+  const asstSpeechStartTimeRef = useRef<number | null>(null);
+  const lastUserTurnIdRef = useRef<string | null>(null);
+  const lastUserTurnTimestampRef = useRef<number | null>(null);
 
   const startCall = useCallback(async () => {
     setErrorMessage(null);
@@ -69,6 +73,10 @@ export function useVoiceSession() {
 
     sessionIdRef.current = safeRandomId('kiosk');
     transcriptionRef.current.reset();
+    userSpeechStartTimeRef.current = null;
+    asstSpeechStartTimeRef.current = null;
+    lastUserTurnIdRef.current = null;
+    lastUserTurnTimestampRef.current = null;
 
     try {
       let currentToken = useAuthStore.getState().token;
@@ -122,7 +130,16 @@ export function useVoiceSession() {
         useTelemetryStore.getState().setDuplexPhase('listening');
         audioGraph.setAiThinking(false);
         audioGraph.setAiSpeaking(false);
-        const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
+        const interruptTime = Date.now();
+        userSpeechStartTimeRef.current = userSpeechStartTimeRef.current || interruptTime;
+        const asstStartTime = asstSpeechStartTimeRef.current;
+        asstSpeechStartTimeRef.current = null;
+        const truncatedAsstTime =
+          asstStartTime && asstStartTime < interruptTime ? asstStartTime : interruptTime - 1;
+        const asstSeg = transcriptionRef.current.finalizeCurrentTurn(
+          'assistant',
+          truncatedAsstTime,
+        );
         if (asstSeg?.text) {
           addDialogueTurn({
             id: asstSeg.id,
@@ -132,6 +149,7 @@ export function useVoiceSession() {
             stage: useBoothStore.getState().cbtStage,
           });
           useTelemetryStore.getState().appendFinalTranscript({
+            id: asstSeg.id,
             role: 'assistant',
             text: asstSeg.text,
             timestamp: asstSeg.timestamp,
@@ -227,15 +245,56 @@ export function useVoiceSession() {
             useTelemetryStore.getState().incrementAudioChunks();
           },
           onTextDelta: (text) => {
+            if (!asstSpeechStartTimeRef.current) {
+              asstSpeechStartTimeRef.current = Date.now();
+            }
             transcriptionRef.current.feedDelta('assistant', text);
           },
           onTranscriptDelta: (transcript) => {
+            if (!userSpeechStartTimeRef.current) {
+              userSpeechStartTimeRef.current = asstSpeechStartTimeRef.current
+                ? asstSpeechStartTimeRef.current - 1
+                : Date.now();
+            }
             transcriptionRef.current.feedDelta('user', transcript);
           },
+          onTranscriptCompleted: (fullTranscript) => {
+            transcriptionRef.current.setCompletedTranscript?.('user', fullTranscript);
+            if (lastUserTurnIdRef.current) {
+              const cleaned = fullTranscript
+                .replace(
+                  /^(?:[呃啊嗯哦喔哎呀]|那个|就是说|然后呢|然后|这个|就是|要是你想说啥|[.,!?，。！？、…~～:：;；\s—\-_])+/u,
+                  '',
+                )
+                .trim();
+              if (cleaned) {
+                const currentStage = useBoothStore.getState().cbtStage;
+                const turnTimestamp = lastUserTurnTimestampRef.current || Date.now() - 1;
+                addDialogueTurn({
+                  id: lastUserTurnIdRef.current,
+                  role: 'user',
+                  content: cleaned,
+                  timestamp: turnTimestamp,
+                  stage: currentStage,
+                });
+                useTelemetryStore.getState().appendFinalTranscript({
+                  id: lastUserTurnIdRef.current,
+                  role: 'user',
+                  text: cleaned,
+                  timestamp: turnTimestamp,
+                });
+              }
+            }
+          },
           onSpeechStarted: () => {
+            lastUserTurnIdRef.current = null;
+            lastUserTurnTimestampRef.current = null;
             // 播放期间忽略服务端 VAD 的 speech_started，完全由本地带回声抑制的 BargeInDetector 处理真实打断
             if (audioGraph.isPlaybackActive()) {
               return;
+            }
+            if (!userSpeechStartTimeRef.current) {
+              userSpeechStartTimeRef.current = Date.now();
             }
             setDuplexPhase('listening');
             useTelemetryStore.getState().setDuplexPhase('listening');
@@ -252,6 +311,9 @@ export function useVoiceSession() {
             }
           },
           onTurnStart: () => {
+            if (!asstSpeechStartTimeRef.current) {
+              asstSpeechStartTimeRef.current = Date.now();
+            }
             if (audioGraph.isPlaybackActive()) {
               setDuplexPhase('speaking');
               useTelemetryStore.getState().setDuplexPhase('speaking');
@@ -272,23 +334,31 @@ export function useVoiceSession() {
               audioGraph.setAiThinking(false);
               audioGraph.setAiSpeaking(false);
             }
-            const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
-            if (asstSeg?.text) {
-              addDialogueTurn({
-                id: asstSeg.id,
-                role: 'assistant',
-                content: asstSeg.text,
-                timestamp: asstSeg.timestamp,
-                stage: useBoothStore.getState().cbtStage,
-              });
-              useTelemetryStore.getState().appendFinalTranscript({
-                role: 'assistant',
-                text: asstSeg.text,
-                timestamp: asstSeg.timestamp,
-              });
+
+            let userStartTime = userSpeechStartTimeRef.current;
+            let asstStartTime = asstSpeechStartTimeRef.current;
+
+            // 强制因果物理时序保障：模型回复必然因用户发言而起，User 发言物理起点必须严格早于 Assistant
+            if (asstStartTime) {
+              if (!userStartTime || userStartTime >= asstStartTime) {
+                userStartTime = asstStartTime - 1;
+              }
+            } else if (userStartTime) {
+              asstStartTime = Date.now();
+              if (userStartTime >= asstStartTime) {
+                userStartTime = asstStartTime - 1;
+              }
             }
-            const userSeg = transcriptionRef.current.finalizeCurrentTurn('user');
+
+            // 严格先结算用户轮次 (User Turn)，确保先入历史与仪表盘双轨流
+            userSpeechStartTimeRef.current = null;
+            const userSeg = transcriptionRef.current.finalizeCurrentTurn(
+              'user',
+              userStartTime || undefined,
+            );
             if (userSeg?.text) {
+              lastUserTurnIdRef.current = userSeg.id;
+              lastUserTurnTimestampRef.current = userSeg.timestamp;
               const currentStage = useBoothStore.getState().cbtStage;
               addDialogueTurn({
                 id: userSeg.id,
@@ -298,6 +368,7 @@ export function useVoiceSession() {
                 stage: currentStage,
               });
               useTelemetryStore.getState().appendFinalTranscript({
+                id: userSeg.id,
                 role: 'user',
                 text: userSeg.text,
                 timestamp: userSeg.timestamp,
@@ -309,6 +380,31 @@ export function useVoiceSession() {
                   useTelemetryStore.getState().setCbtStage(pacing.autoPromotedStage);
                 }
               }
+            }
+
+            // 随后结算助手轮次 (Assistant Turn)
+            asstSpeechStartTimeRef.current = null;
+            const asstSeg = transcriptionRef.current.finalizeCurrentTurn(
+              'assistant',
+              asstStartTime || undefined,
+            );
+            if (asstSeg?.text) {
+              if (userSeg?.text && asstSeg.timestamp <= userSeg.timestamp) {
+                asstSeg.timestamp = userSeg.timestamp + 1;
+              }
+              addDialogueTurn({
+                id: asstSeg.id,
+                role: 'assistant',
+                content: asstSeg.text,
+                timestamp: asstSeg.timestamp,
+                stage: useBoothStore.getState().cbtStage,
+              });
+              useTelemetryStore.getState().appendFinalTranscript({
+                id: asstSeg.id,
+                role: 'assistant',
+                text: asstSeg.text,
+                timestamp: asstSeg.timestamp,
+              });
             }
           },
           onToolCall: async (toolCall) => {
@@ -323,6 +419,27 @@ export function useVoiceSession() {
             setCBTStage('Crisis_Escalation');
             useTelemetryStore.getState().setCbtStage('Crisis_Escalation');
             setCrisisOverlayOpen(true);
+
+            // 优先结算可能残留的用户发言
+            const userStartTime = userSpeechStartTimeRef.current || Date.now() - 1;
+            userSpeechStartTimeRef.current = null;
+            const userSeg = transcriptionRef.current.finalizeCurrentTurn('user', userStartTime);
+            if (userSeg?.text) {
+              addDialogueTurn({
+                id: userSeg.id,
+                role: 'user',
+                content: userSeg.text,
+                timestamp: userSeg.timestamp,
+                stage: 'Crisis_Escalation',
+              });
+              useTelemetryStore.getState().appendFinalTranscript({
+                id: userSeg.id,
+                role: 'user',
+                text: userSeg.text,
+                timestamp: userSeg.timestamp,
+              });
+            }
+
             addDialogueTurn({
               id: `turn_${Date.now()}`,
               role: 'assistant',
@@ -441,22 +558,17 @@ export function useVoiceSession() {
     setSessionStatus('idle');
     setDuplexPhase('idle');
 
-    const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
-    if (asstSeg?.text) {
-      addDialogueTurn({
-        id: asstSeg.id,
-        role: 'assistant',
-        content: asstSeg.text,
-        timestamp: asstSeg.timestamp,
-        stage: useBoothStore.getState().cbtStage,
-      });
-      useTelemetryStore.getState().appendFinalTranscript({
-        role: 'assistant',
-        text: asstSeg.text,
-        timestamp: asstSeg.timestamp,
-      });
+    // 挂机前优先结算可能残留的用户发言
+    let userStartTime = userSpeechStartTimeRef.current;
+    let asstStartTime = asstSpeechStartTimeRef.current;
+    if (asstStartTime && (!userStartTime || userStartTime >= asstStartTime)) {
+      userStartTime = asstStartTime - 1;
     }
-    const userSeg = transcriptionRef.current.finalizeCurrentTurn('user');
+    userSpeechStartTimeRef.current = null;
+    const userSeg = transcriptionRef.current.finalizeCurrentTurn(
+      'user',
+      userStartTime || undefined,
+    );
     if (userSeg?.text) {
       addDialogueTurn({
         id: userSeg.id,
@@ -466,9 +578,35 @@ export function useVoiceSession() {
         stage: useBoothStore.getState().cbtStage,
       });
       useTelemetryStore.getState().appendFinalTranscript({
+        id: userSeg.id,
         role: 'user',
         text: userSeg.text,
         timestamp: userSeg.timestamp,
+      });
+    }
+
+    // 随后结算助手最后回复
+    asstSpeechStartTimeRef.current = null;
+    const asstSeg = transcriptionRef.current.finalizeCurrentTurn(
+      'assistant',
+      asstStartTime || undefined,
+    );
+    if (asstSeg?.text) {
+      if (userSeg?.text && asstSeg.timestamp <= userSeg.timestamp) {
+        asstSeg.timestamp = userSeg.timestamp + 1;
+      }
+      addDialogueTurn({
+        id: asstSeg.id,
+        role: 'assistant',
+        content: asstSeg.text,
+        timestamp: asstSeg.timestamp,
+        stage: useBoothStore.getState().cbtStage,
+      });
+      useTelemetryStore.getState().appendFinalTranscript({
+        id: asstSeg.id,
+        role: 'assistant',
+        text: asstSeg.text,
+        timestamp: asstSeg.timestamp,
       });
     }
 
@@ -502,6 +640,8 @@ export function useVoiceSession() {
 
   const interrupt = useCallback(() => {
     useTelemetryStore.getState().incrementBargeIns();
+    const interruptTime = Date.now();
+    userSpeechStartTimeRef.current = userSpeechStartTimeRef.current || interruptTime;
     const playedMs = audioGraphRef.current ? audioGraphRef.current.getPlaybackDurationMs() : 0;
     if (audioGraphRef.current) {
       audioGraphRef.current.stopPlayback(150);
@@ -510,7 +650,7 @@ export function useVoiceSession() {
     }
     if (clientRef.current) {
       clientRef.current.updateTurnDetection('listening');
-      const itemId = clientRef.current.getCurrentResponseItemId();
+      const itemId = clientRef.current?.getCurrentResponseItemId();
       clientRef.current.interrupt({
         itemId: itemId || undefined,
         audioEndMs: playedMs,
@@ -518,7 +658,11 @@ export function useVoiceSession() {
     }
     setDuplexPhase('listening');
     useTelemetryStore.getState().setDuplexPhase('listening');
-    const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant');
+    const asstStartTime = asstSpeechStartTimeRef.current;
+    asstSpeechStartTimeRef.current = null;
+    const truncatedAsstTime =
+      asstStartTime && asstStartTime < interruptTime ? asstStartTime : interruptTime - 1;
+    const asstSeg = transcriptionRef.current.finalizeCurrentTurn('assistant', truncatedAsstTime);
     if (asstSeg?.text) {
       addDialogueTurn({
         id: asstSeg.id,
@@ -528,6 +672,7 @@ export function useVoiceSession() {
         stage: useBoothStore.getState().cbtStage,
       });
       useTelemetryStore.getState().appendFinalTranscript({
+        id: asstSeg.id,
         role: 'assistant',
         text: asstSeg.text,
         timestamp: asstSeg.timestamp,

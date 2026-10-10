@@ -116,6 +116,51 @@ describe('五大扩展管线契约与核心算法验证 (Pipelines & Providers)'
       expect(finalized?.text).toBe('我今天心情有点低落。');
       expect(pipeline.getHistory().length).toBe(1);
     });
+
+    it('正确过滤 Whisper 前导标点与幻觉词 (",然后" 与 ",要是你想说啥")', () => {
+      const pipeline = new BufferedTranscriptionPipeline();
+
+      pipeline.feedDelta('user', ',然后我真的感觉学业压力好大');
+      const userTurn = pipeline.finalizeCurrentTurn('user');
+      expect(userTurn?.text).toBe('我真的感觉学业压力好大');
+
+      pipeline.feedDelta('user', ',要是你想说啥，今天数学考试没及格');
+      const userTurn2 = pipeline.finalizeCurrentTurn('user');
+      expect(userTurn2?.text).toBe('今天数学考试没及格');
+
+      // 仅包含纯噪声或纯前导标点幻觉时应安全清除并返回 null
+      pipeline.feedDelta('user', ',然后');
+      const emptyTurn = pipeline.finalizeCurrentTurn('user');
+      expect(emptyTurn).toBeNull();
+    });
+
+    it('finalizeCurrentTurn 优先以物理发言起点 (speech start time) 记录时间戳而非结算时点', async () => {
+      const pipeline = new BufferedTranscriptionPipeline();
+      const speechStartTime = Date.now() - 5000;
+
+      pipeline.feedDelta('user', '我从五秒前开始说话');
+      // 传入物理发言起点时间戳
+      const finalized = pipeline.finalizeCurrentTurn('user', speechStartTime);
+      expect(finalized?.timestamp).toBe(speechStartTime);
+    });
+
+    it('setCompletedTranscript 能够以权威终态转写整句覆盖流式增量并通知订阅者', () => {
+      const pipeline = new BufferedTranscriptionPipeline();
+      const emitted: string[] = [];
+      pipeline.subscribe((seg) => {
+        emitted.push(seg.text);
+      });
+
+      pipeline.feedDelta('user', '草稿流式片段');
+      expect(emitted[emitted.length - 1]).toBe('草稿流式片段');
+
+      // 收到 Whisper 终态完整文本
+      pipeline.setCompletedTranscript('user', ',然后这是完整经过声学优化的句子');
+      expect(emitted[emitted.length - 1]).toBe('这是完整经过声学优化的句子');
+
+      const finalized = pipeline.finalizeCurrentTurn('user');
+      expect(finalized?.text).toBe('这是完整经过声学优化的句子');
+    });
   });
 
   describe('Pillar 5: 脱敏通话简报生成管线', () => {

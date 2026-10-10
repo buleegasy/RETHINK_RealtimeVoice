@@ -493,8 +493,24 @@ export class MiniMaxRealtimeClient {
         }
       }
 
-      if (type === 'conversation.item.input_audio_transcription.completed') {
+      if (
+        type === 'conversation.item.input_audio_transcription.completed' ||
+        type === 'input_audio_transcription.completed'
+      ) {
         const transcript = event.transcript || (event as any).transcript || (event as any).text;
+        if (transcript) {
+          this.callbacks.onTranscriptCompleted?.(transcript);
+          this.callbacks.onTranscriptDelta?.(transcript);
+        }
+      } else if (
+        type === 'conversation.item.input_audio_transcription.delta' ||
+        type === 'input_audio_transcription.delta'
+      ) {
+        const transcript =
+          event.transcript ||
+          (event as any).delta ||
+          (event as any).transcript ||
+          (event as any).text;
         if (transcript) {
           this.callbacks.onTranscriptDelta?.(transcript);
         }

@@ -13,7 +13,12 @@ export interface ITranscriptionPipeline {
 
   feedDelta(speaker: 'user' | 'assistant', delta: string): void;
 
-  finalizeCurrentTurn(speaker: 'user' | 'assistant'): TranscriptSegment | null;
+  setCompletedTranscript?(speaker: 'user' | 'assistant', fullText: string): void;
+
+  finalizeCurrentTurn(
+    speaker: 'user' | 'assistant',
+    customTimestamp?: number,
+  ): TranscriptSegment | null;
 
   subscribe(listener: TranscriptSubscriber): () => void;
 

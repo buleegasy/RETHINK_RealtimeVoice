@@ -294,10 +294,24 @@ export class MiniMaxWebRtcClient {
     if (type === 'response.audio_transcript.delta' && event.delta) {
       this.callbacks.onTextDelta?.(event.delta);
     } else if (
-      type === 'conversation.item.input_audio_transcription.completed' &&
-      event.transcript
+      (type === 'conversation.item.input_audio_transcription.completed' ||
+        type === 'input_audio_transcription.completed') &&
+      (event.transcript || (event as any).text)
     ) {
-      this.callbacks.onTranscriptDelta?.(event.transcript);
+      const text = event.transcript || (event as any).text || '';
+      if (text) {
+        this.callbacks.onTranscriptCompleted?.(text);
+        this.callbacks.onTranscriptDelta?.(text);
+      }
+    } else if (
+      (type === 'conversation.item.input_audio_transcription.delta' ||
+        type === 'input_audio_transcription.delta') &&
+      (event.transcript || (event as any).delta || (event as any).text)
+    ) {
+      const text = (event as any).delta || event.transcript || (event as any).text || '';
+      if (text) {
+        this.callbacks.onTranscriptDelta?.(text);
+      }
     } else if (type === 'input_audio_buffer.speech_started') {
       this.callbacks.onSpeechStarted?.();
     } else if (type === 'input_audio_buffer.speech_stopped') {

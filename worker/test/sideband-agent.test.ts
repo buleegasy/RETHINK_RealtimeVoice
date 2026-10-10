@@ -223,4 +223,77 @@ describe('原生旁路监护智能体 (SidebandAgent) 单元测试', () => {
       `wss://custom-gateway.io${atob('L29wZW5haS92MS9saXZlL3Nlc3Npb25z')}/sess_active_456/attach`,
     );
   });
+
+  it('getDialogueHistory 结算未归档对话时，必须严格保证 User 轮次排在 Assistant 之前', async () => {
+    const { agent } = createAgentHarness();
+
+    // 模拟用户与助手均有流式缓冲未完成显式结算
+    await agent.handleUpstreamEvent({
+      type: 'conversation.item.input_audio_transcription.delta',
+      delta: '我今天真的很累',
+    });
+    await agent.handleUpstreamEvent({
+      type: 'session.output_transcript.delta',
+      delta: '我明白你的感受，抱抱你',
+    });
+
+    const history = agent.getDialogueHistory();
+    expect(history.length).toBe(2);
+    expect(history[0].role).toBe('user');
+    expect(history[0].content).toBe('我今天真的很累');
+    expect(history[1].role).toBe('assistant');
+    expect(history[1].content).toBe('我明白你的感受，抱抱你');
+  });
+
+  it('RealtimeGatewayAdapter 正确将 session.input_transcript.delta 映射为 input_audio_transcription.delta', () => {
+    const deltaRes = RealtimeGatewayAdapter.transformUpstreamEvent(
+      {
+        type: 'session.input_transcript.delta',
+        delta: '你好呀',
+      },
+      true,
+    );
+    expect(deltaRes.transformed.type).toBe('conversation.item.input_audio_transcription.delta');
+    expect(deltaRes.transformed.delta).toBe('你好呀');
+
+    const completedRes = RealtimeGatewayAdapter.transformUpstreamEvent(
+      {
+        type: 'session.input_transcript.completed',
+        transcript: '完整语音转写文本',
+      },
+      true,
+    );
+    expect(completedRes.transformed.type).toBe(
+      'conversation.item.input_audio_transcription.completed',
+    );
+    expect(completedRes.transformed.transcript).toBe('完整语音转写文本');
+  });
+
+  it('用户先后接收 delta 与 completed 后模型回复，getDialogueHistory 不应发生重复且 User 严格排在 Assistant 之前', async () => {
+    const { agent } = createAgentHarness();
+
+    // 1. 用户流式输入 delta
+    await agent.handleUpstreamEvent({
+      type: 'session.input_transcript.delta',
+      delta: '我今天真的很累',
+    });
+    // 2. 服务端发送 completed 终态转写
+    await agent.handleUpstreamEvent({
+      type: 'session.input_transcript.completed',
+      transcript: '我今天真的很累',
+    });
+    // 3. 模型响应完成
+    await agent.handleUpstreamEvent({
+      type: 'session.output_transcript.completed',
+      transcript: '抱抱你，辛苦了',
+    });
+
+    // 4. 挂机结算历史
+    const history = agent.getDialogueHistory();
+    expect(history.length).toBe(2);
+    expect(history[0].role).toBe('user');
+    expect(history[0].content).toBe('我今天真的很累');
+    expect(history[1].role).toBe('assistant');
+    expect(history[1].content).toBe('抱抱你，辛苦了');
+  });
 });

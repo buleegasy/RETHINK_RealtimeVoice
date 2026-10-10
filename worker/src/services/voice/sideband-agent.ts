@@ -48,6 +48,9 @@ export class SidebandAgent {
   }
 
   public finalizeAssistantTurn(): void {
+    if (this.userSpeechBuffer.trim()) {
+      this.finalizeUserTurn();
+    }
     if (this.assistantSpeechBuffer.trim()) {
       const text = this.assistantSpeechBuffer.trim();
       this.assistantSpeechBuffer = '';
@@ -69,8 +72,8 @@ export class SidebandAgent {
   }
 
   public getDialogueHistory(): Array<{ role: 'user' | 'assistant'; content: string }> {
-    this.finalizeAssistantTurn();
     this.finalizeUserTurn();
+    this.finalizeAssistantTurn();
     return this.dialogueHistory;
   }
 
@@ -115,7 +118,11 @@ export class SidebandAgent {
       return;
     }
 
-    if (payload.type === 'session.input_transcript.delta') {
+    if (
+      payload.type === 'session.input_transcript.delta' ||
+      payload.type === 'conversation.item.input_audio_transcription.delta' ||
+      payload.type === 'input_audio_transcription.delta'
+    ) {
       const delta = payload.delta || payload.transcript || payload.text || '';
       // 若已有助手音频缓存尚未提交，说明用户插话打断，立即归档助手轮次
       if (this.assistantSpeechBuffer.trim()) {
@@ -143,6 +150,7 @@ export class SidebandAgent {
     const userText = this.extractTranscriptText(payload);
     const itemId = payload.item_id || payload.item?.id || payload.event_id;
     if (userText) {
+      this.userSpeechBuffer = '';
       await this.processUserSpeech(userText, itemId);
       return;
     }
@@ -287,6 +295,9 @@ export class SidebandAgent {
   }
 
   private recordAssistantTranscript(payload: any): void {
+    if (this.userSpeechBuffer.trim()) {
+      this.finalizeUserTurn();
+    }
     const explicitText = payload.transcript || payload.text;
     if (
       (payload.type === 'response.audio_transcript.done' ||

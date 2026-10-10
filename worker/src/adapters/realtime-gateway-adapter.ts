@@ -452,10 +452,12 @@ export class RealtimeGatewayAdapter {
     }
 
     if (result.type === 'session.input_transcript.delta') {
+      const text = result.delta || result.transcript || result.text || '';
       return {
         transformed: {
-          type: 'conversation.item.input_audio_transcription.completed',
-          transcript: result.delta || result.transcript || result.text || '',
+          type: 'conversation.item.input_audio_transcription.delta',
+          delta: text,
+          transcript: text,
         },
       };
     }

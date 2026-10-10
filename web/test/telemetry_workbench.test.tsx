@@ -176,4 +176,100 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
     expect(screen.getByText('24kHz 16bit PCM')).toBeInTheDocument();
     expect(screen.getByText('WebSocket 全双工网关已连接')).toBeInTheDocument();
   });
+
+  it('appendFinalTranscript 与 addDialogueTurn 应严格按时间戳递增排序且同时间戳 User 优先', () => {
+    // 1. 验证 telemetryStore.appendFinalTranscript
+    const tele = useTelemetryStore.getState();
+    tele.clearTelemetry();
+
+    // 先插入一个较晚的 assistant，再插入一个较早的 user，再插入一个同时间戳的 user 与 assistant
+    tele.appendFinalTranscript({ role: 'assistant', text: '助手晚发言', timestamp: 3000 });
+    tele.appendFinalTranscript({ role: 'user', text: '用户早发言', timestamp: 1000 });
+    tele.appendFinalTranscript({ role: 'assistant', text: '助手同时间戳', timestamp: 2000 });
+    tele.appendFinalTranscript({ role: 'user', text: '用户同时间戳', timestamp: 2000 });
+
+    const feed = useTelemetryStore.getState().transcriptFeed;
+    expect(feed.map((f) => ({ role: f.role, text: f.text, timestamp: f.timestamp }))).toEqual([
+      { role: 'user', text: '用户早发言', timestamp: 1000 },
+      { role: 'user', text: '用户同时间戳', timestamp: 2000 },
+      { role: 'assistant', text: '助手同时间戳', timestamp: 2000 },
+      { role: 'assistant', text: '助手晚发言', timestamp: 3000 },
+    ]);
+
+    // 2. 验证 boothStore.addDialogueTurn
+    const booth = useBoothStore.getState();
+    booth.resetBooth();
+
+    booth.addDialogueTurn({ id: '1', role: 'assistant', content: '助手晚', timestamp: 5000 });
+    booth.addDialogueTurn({ id: '2', role: 'user', content: '用户早', timestamp: 2000 });
+    booth.addDialogueTurn({ id: '3', role: 'assistant', content: '助手并列', timestamp: 3000 });
+    booth.addDialogueTurn({ id: '4', role: 'user', content: '用户并列', timestamp: 3000 });
+
+    const turns = useBoothStore.getState().dialogueHistory;
+    expect(
+      turns.map((t) => ({ role: t.role, content: t.content, timestamp: t.timestamp })),
+    ).toEqual([
+      { role: 'user', content: '用户早', timestamp: 2000 },
+      { role: 'user', content: '用户并列', timestamp: 3000 },
+      { role: 'assistant', content: '助手并列', timestamp: 3000 },
+      { role: 'assistant', content: '助手晚', timestamp: 5000 },
+    ]);
+  });
+
+  it('appendFinalTranscript 与 addDialogueTurn 应支持按 ID 原位更新并去重', () => {
+    // 1. boothStore 原位更新
+    const booth = useBoothStore.getState();
+    booth.resetBooth();
+    booth.addDialogueTurn({
+      id: 'turn-user-1',
+      role: 'user',
+      content: '流式半句话',
+      timestamp: 1000,
+    });
+    booth.addDialogueTurn({
+      id: 'turn-asst-1',
+      role: 'assistant',
+      content: '模型回答',
+      timestamp: 2000,
+    });
+    // 收到 Whisper 终态转写更新
+    booth.addDialogueTurn({
+      id: 'turn-user-1',
+      role: 'user',
+      content: '流式完整一句话',
+      timestamp: 1000,
+    });
+
+    const turns = useBoothStore.getState().dialogueHistory;
+    expect(turns.length).toBe(2);
+    expect(turns[0].content).toBe('流式完整一句话');
+    expect(turns[1].content).toBe('模型回答');
+
+    // 2. telemetryStore 原位更新
+    const tele = useTelemetryStore.getState();
+    tele.clearTelemetry();
+    tele.appendFinalTranscript({
+      id: 'feed-user-1',
+      role: 'user',
+      text: '草稿文本',
+      timestamp: 1000,
+    });
+    tele.appendFinalTranscript({
+      id: 'feed-asst-1',
+      role: 'assistant',
+      text: '回答文本',
+      timestamp: 2000,
+    });
+    tele.appendFinalTranscript({
+      id: 'feed-user-1',
+      role: 'user',
+      text: '终态校正文本',
+      timestamp: 1000,
+    });
+
+    const feed = useTelemetryStore.getState().transcriptFeed;
+    expect(feed.length).toBe(2);
+    expect(feed[0].text).toBe('终态校正文本');
+    expect(feed[1].text).toBe('回答文本');
+  });
 });

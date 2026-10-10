@@ -235,4 +235,48 @@ describe('WebRTC Client & Dual-Transport Architecture Tests', () => {
 
     client.disconnect();
   });
+
+  it('MiniMaxWebRtcClient 兼容接收 input_audio_transcription 的 delta 与 completed 事件', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        sdp: 'v=0\r\nsdp_answer\r\n',
+      }),
+    } as any);
+
+    const onTranscriptDelta = vi.fn();
+    const onTranscriptCompleted = vi.fn();
+    const client = new MiniMaxWebRtcClient({
+      callbacks: { onTranscriptDelta, onTranscriptCompleted },
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const pc = (client as any).pc as MockRTCPeerConnection;
+    const dc = pc.dataChannel as MockDataChannel;
+
+    // 1. 模拟 WebRTC DataChannel 收到 input_audio_transcription.delta
+    dc.onmessage?.({
+      data: JSON.stringify({
+        type: 'conversation.item.input_audio_transcription.delta',
+        delta: '流式转写',
+      }),
+    });
+    expect(onTranscriptDelta).toHaveBeenCalledWith('流式转写');
+    expect(onTranscriptCompleted).not.toHaveBeenCalled();
+
+    // 2. 模拟收到 completed
+    dc.onmessage?.({
+      data: JSON.stringify({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: '流式转写完成',
+      }),
+    });
+    expect(onTranscriptDelta).toHaveBeenCalledWith('流式转写完成');
+    expect(onTranscriptCompleted).toHaveBeenCalledWith('流式转写完成');
+
+    client.disconnect();
+  });
 });

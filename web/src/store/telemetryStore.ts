@@ -72,7 +72,9 @@ export interface TelemetryState {
   addShadowDirective: (directive: Omit<ShadowDirectiveLog, 'id'>) => void;
   setStreamingUserText: (text: string) => void;
   setStreamingAssistantText: (text: string) => void;
-  appendFinalTranscript: (item: Omit<LiveTranscriptItem, 'id' | 'isFinal'>) => void;
+  appendFinalTranscript: (
+    item: Omit<LiveTranscriptItem, 'id' | 'isFinal'> & { id?: string },
+  ) => void;
   updateRtt: (rtt: number) => void;
   updateTtft: (ttft: number) => void;
   updateJitterMetrics: (metrics: JitterMetricsData) => void;
@@ -145,13 +147,30 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
 
   appendFinalTranscript: (item) =>
     set((state) => {
+      const id = item.id || `ts_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const newItem: LiveTranscriptItem = {
         ...item,
-        id: `ts_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id,
         isFinal: true,
       };
+      const existingIdx = state.transcriptFeed.findIndex((f) => f.id === id);
+      let list: LiveTranscriptItem[];
+      if (existingIdx >= 0) {
+        list = [...state.transcriptFeed];
+        list[existingIdx] = newItem;
+      } else {
+        list = [...state.transcriptFeed, newItem];
+      }
+      const updated = list.sort((a, b) => {
+        if (a.timestamp !== b.timestamp) {
+          return a.timestamp - b.timestamp;
+        }
+        if (a.role === 'user' && b.role !== 'user') return -1;
+        if (a.role !== 'user' && b.role === 'user') return 1;
+        return 0;
+      });
       return {
-        transcriptFeed: [...state.transcriptFeed, newItem],
+        transcriptFeed: updated,
         streamingUserText: item.role === 'user' ? '' : state.streamingUserText,
         streamingAssistantText: item.role === 'assistant' ? '' : state.streamingAssistantText,
       };

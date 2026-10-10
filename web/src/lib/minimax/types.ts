@@ -55,6 +55,7 @@ export interface MiniMaxClientCallbacks {
   onAudioDelta?: (pcm16Base64: string) => void;
   onTextDelta?: (text: string) => void;
   onTranscriptDelta?: (transcript: string) => void;
+  onTranscriptCompleted?: (transcript: string) => void;
   onTurnStart?: () => void;
   onTurnEnd?: () => void;
   onSpeechStarted?: (details?: { audioStartMs?: number; itemId?: string }) => void;

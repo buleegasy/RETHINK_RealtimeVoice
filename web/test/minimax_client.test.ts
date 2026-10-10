@@ -423,4 +423,39 @@ describe('MiniMaxRealtimeClient (原生协议客户端验证)', () => {
 
     client.disconnect();
   });
+
+  it('同时兼容支持 conversation.item.input_audio_transcription 的 delta 与 completed 事件', async () => {
+    const onTranscriptDelta = vi.fn();
+    const onTranscriptCompleted = vi.fn();
+    const client = new MiniMaxRealtimeClient({
+      relayUrl: 'ws://localhost:8787/api/voice/ws',
+      callbacks: { onTranscriptDelta, onTranscriptCompleted },
+    });
+
+    client.connect();
+    await new Promise((r) => setTimeout(r, 15));
+    const ws = (client as any).ws as MockWebSocket;
+
+    // 1. 测试 delta 流式分片到达
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'conversation.item.input_audio_transcription.delta',
+        delta: '我今天',
+      }),
+    });
+    expect(onTranscriptDelta).toHaveBeenCalledWith('我今天');
+    expect(onTranscriptCompleted).not.toHaveBeenCalled();
+
+    // 2. 测试 completed 完整转写到达
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: '我今天心情不好',
+      }),
+    });
+    expect(onTranscriptDelta).toHaveBeenCalledWith('我今天心情不好');
+    expect(onTranscriptCompleted).toHaveBeenCalledWith('我今天心情不好');
+
+    client.disconnect();
+  });
 });
