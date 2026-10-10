@@ -90,7 +90,7 @@ export class AudioGraphService {
   }
 
   public getJitterMetrics() {
-    return this.playbackQueue.getJitterMetrics();
+    return this.playbackQueue.getJitterMetrics(this.audioCtx);
   }
 
   public updateNetworkQuality(rttMs: number): void {

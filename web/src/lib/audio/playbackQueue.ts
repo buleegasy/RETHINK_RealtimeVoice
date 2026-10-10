@@ -22,8 +22,8 @@ export class PlaybackQueue {
   private endDrainTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly MIN_TARGET_SEC: number = 0.04;
-  private readonly MAX_TARGET_SEC: number = 0.16;
-  private readonly JITTER_REBUFFER_SEC: number = 0.02;
+  private readonly MAX_TARGET_SEC: number = 0.24;
+  private readonly JITTER_REBUFFER_SEC: number = 0.04;
   private adaptiveTargetSec: number = 0.06;
   private consecutiveSmoothChunks: number = 0;
 
@@ -54,10 +54,13 @@ export class PlaybackQueue {
     return this.isSpeaking || this.scheduledSources.length > 0 || this.jitterBuffer.length > 0;
   }
 
-  public getJitterMetrics() {
+  public getJitterMetrics(ctx?: AudioContext | null) {
+    const scheduledCushionSec =
+      ctx && this.nextPlayTime > ctx.currentTime ? this.nextPlayTime - ctx.currentTime : 0;
+    const totalBufferedSec = scheduledCushionSec + this.jitterBufferedSec;
     return {
-      bufferedSec: Number(this.jitterBufferedSec.toFixed(3)),
-      bufferedMs: Math.round(this.jitterBufferedSec * 1000),
+      bufferedSec: Number(totalBufferedSec.toFixed(3)),
+      bufferedMs: Math.round(totalBufferedSec * 1000),
       isBuffering: this.isJitterBuffering,
       queuedBuffers: this.jitterBuffer.length,
       scheduledCount: this.scheduledSources.length,
@@ -93,15 +96,15 @@ export class PlaybackQueue {
     this.jitterBuffer.push(buffer);
     this.jitterBufferedSec += buffer.duration;
 
-    // 若当前正在播放或者已经处于流式播放状态，立即调度冲刷，杜绝反复重缓冲卡顿
-    if (
-      this.scheduledSources.length > 0 ||
-      !this.isJitterBuffering ||
-      this.jitterBufferedSec >= this.adaptiveTargetSec
-    ) {
+    // 若当前正在积攒缓冲（初始启动或严重饥饿枯竭后），必须积攒到目标水位才开始冲刷播放
+    if (this.isJitterBuffering) {
+      if (this.jitterBufferedSec < this.adaptiveTargetSec) {
+        return;
+      }
       this.isJitterBuffering = false;
-      this.flushJitterBuffer(ctx, outputGainNode, analyserNode);
     }
+
+    this.flushJitterBuffer(ctx, outputGainNode, analyserNode);
   }
 
   public flushJitterBuffer(
@@ -128,9 +131,12 @@ export class PlaybackQueue {
 
       const now = ctx.currentTime;
       if (this.nextPlayTime < now) {
+        // 底层音频时钟落后于真实时间（发生 Underflow 枯竭）
         this.adaptiveTargetSec = Math.min(this.MAX_TARGET_SEC, this.adaptiveTargetSec + 0.02);
         this.consecutiveSmoothChunks = 0;
-        this.nextPlayTime = now + 0.015;
+        // 拉开安全播放时间裕量，消除 15ms 临界卡顿
+        const leadTimeSec = Math.max(0.04, this.adaptiveTargetSec * 0.5);
+        this.nextPlayTime = now + leadTimeSec;
       } else {
         this.consecutiveSmoothChunks++;
         if (this.consecutiveSmoothChunks > 30 && this.adaptiveTargetSec > this.MIN_TARGET_SEC) {
@@ -155,12 +161,13 @@ export class PlaybackQueue {
           this.scheduledSources.splice(idx, 1);
         }
         if (this.scheduledSources.length === 0 && this.jitterBuffer.length === 0) {
+          // 正在播放队列与本地缓冲全部耗尽，置回缓冲态，待下一波音频帧积攒平滑后再播
+          this.isJitterBuffering = true;
           if (this.endDrainTimer) clearTimeout(this.endDrainTimer);
           this.endDrainTimer = setTimeout(() => {
             if (this.scheduledSources.length === 0 && this.jitterBuffer.length === 0) {
               this.playbackStartCtxTime = null;
               this.setAiSpeaking(false);
-              this.isJitterBuffering = true;
             }
           }, 450);
         }
