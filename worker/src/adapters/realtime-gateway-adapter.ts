@@ -169,6 +169,7 @@ export class RealtimeGatewayAdapter {
   public static async negotiateWebRtcOffer(
     config: RealtimeGatewayConfig,
     sdpOffer: string,
+    sessionParams?: Record<string, unknown>,
   ): Promise<{
     ok: boolean;
     sdp?: string;
@@ -186,7 +187,7 @@ export class RealtimeGatewayAdapter {
     }
 
     // 先申请临时会话密钥
-    const tokenRes = await this.createEphemeralToken(config);
+    const tokenRes = await this.createEphemeralToken(config, sessionParams);
     if (!tokenRes.ok || !tokenRes.clientSecret) {
       return {
         ok: false,

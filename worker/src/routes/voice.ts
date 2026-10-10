@@ -89,7 +89,17 @@ voiceRouter.post('/webrtc/session', async (c) => {
 
   const model = body.model || 'minimax-realtime';
   const config = RealtimeGatewayAdapter.resolveGatewayConfig(c.env || {}, model);
-  const ephemeral = await RealtimeGatewayAdapter.createEphemeralToken(config);
+
+  const currentMemory = await VoiceService.getMemory(c.env || {}, user?.uid || body.userId || '');
+  const cleanSession = RealtimeGatewayAdapter.normalizeSessionUpdatePayload(body, currentMemory);
+  const upstreamSession = RealtimeGatewayAdapter.buildUpstreamSessionPayload(
+    cleanSession,
+    config.upstreamModel,
+  );
+
+  const ephemeral = await RealtimeGatewayAdapter.createEphemeralToken(config, {
+    session: upstreamSession,
+  });
 
   return c.json({
     ok: true,

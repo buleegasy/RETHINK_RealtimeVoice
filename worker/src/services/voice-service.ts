@@ -28,6 +28,7 @@ export class VoiceService {
       userId?: string;
       username?: string;
       model?: string;
+      [key: string]: any;
     },
     _ctx?: ExecutionContext,
   ): Promise<{
@@ -44,7 +45,17 @@ export class VoiceService {
     }
 
     const config = RealtimeGatewayAdapter.resolveGatewayConfig(env, payload.model);
-    return RealtimeGatewayAdapter.negotiateWebRtcOffer(config, sdp);
+    const currentMemory = await getSituationalMemory(env, payload.userId || '');
+    const cleanSession = RealtimeGatewayAdapter.normalizeSessionUpdatePayload(
+      payload,
+      currentMemory,
+    );
+    const upstreamSession = RealtimeGatewayAdapter.buildUpstreamSessionPayload(
+      cleanSession,
+      config.upstreamModel,
+    );
+
+    return RealtimeGatewayAdapter.negotiateWebRtcOffer(config, sdp, { session: upstreamSession });
   }
 
   /**
