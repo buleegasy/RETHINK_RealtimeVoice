@@ -16,6 +16,9 @@ export class BargeInDetector {
   // 动态环境底噪估算值 (EMA 滤波)
   public noiseFloorRms: number = 0.03;
 
+  // 扬声器声学回声包络峰值保持与混响衰减 (Acoustic Echo Peak-Hold & Decay)
+  public speakerEnvelopeRms: number = 0;
+
   // 倾听态噪声门控与无损预录状态
   private isListeningSpeechActive: boolean = false;
   private listeningHangoverFrames: number = 0;
@@ -27,6 +30,7 @@ export class BargeInDetector {
     this.isListeningSpeechActive = false;
     this.listeningHangoverFrames = 0;
     this.listeningPreRoll = [];
+    this.speakerEnvelopeRms = 0;
   }
 
   public resetWarmUp(frames: number = 4): void {
@@ -34,7 +38,10 @@ export class BargeInDetector {
   }
 
   public getSpeakerRms(speakerAnalyser: AnalyserNode | null, isAiSpeaking: boolean): number {
-    if (!speakerAnalyser || !isAiSpeaking) return 0;
+    if (!speakerAnalyser || !isAiSpeaking) {
+      this.speakerEnvelopeRms *= 0.85;
+      return this.speakerEnvelopeRms;
+    }
     const data = new Uint8Array(speakerAnalyser.frequencyBinCount);
     speakerAnalyser.getByteTimeDomainData(data);
     let sum = 0;
@@ -42,7 +49,10 @@ export class BargeInDetector {
       const v = (byte - 128) / 128;
       sum += v * v;
     }
-    return Math.sqrt(sum / data.length);
+    const instantRms = Math.sqrt(sum / data.length);
+    // 峰值保持与指数衰减滤波，覆盖声卡硬件输出与房间混响延时 (100ms ~ 300ms)
+    this.speakerEnvelopeRms = Math.max(instantRms, this.speakerEnvelopeRms * 0.88);
+    return Math.max(instantRms, this.speakerEnvelopeRms);
   }
 
   public processInputChunk(params: {
@@ -85,15 +95,17 @@ export class BargeInDetector {
     }
 
     if (isAiSpeakingOrActive) {
-      // 扬声器初始瞬态抑制窗：播发启动前 280ms 抑制扬声器冲激响应
+      // 扬声器初始瞬态抑制窗：播发启动前 280ms 抑制扬声器初冲激响应
       if (playedMs < 280) {
-        this.reset();
+        this.consecutiveSpeechFrames = 0;
+        this.preRollChunks = [];
         return;
       }
 
-      // 动态自适应打断阈值：根据环境底噪与扬声器回声动态加权，杜绝嘈杂人声误判
-      const baseThreshold = Math.max(0.16, this.noiseFloorRms * 2.0 + 0.06);
-      const echoThreshold = speakerRms * 1.35 + 0.08;
+      // 动态自适应打断阈值：结合底噪与扬声器回声包络峰值动态加权
+      const effectiveSpeakerRms = Math.max(speakerRms, this.speakerEnvelopeRms);
+      const baseThreshold = Math.max(0.18, this.noiseFloorRms * 2.2 + 0.08);
+      const echoThreshold = effectiveSpeakerRms * 1.5 + 0.1;
       const dynamicThreshold = Math.max(baseThreshold, echoThreshold);
 
       if (micRms > dynamicThreshold) {
@@ -118,18 +130,18 @@ export class BargeInDetector {
         }
       }
     } else {
-      // 倾听态环境噪声门控：过滤远场持续人声与房间白噪声，防止空载推流打断服务端时序
+      // 倾听态环境噪声门控：过滤白噪声，保持自然首字与平滑闭合
       this.consecutiveSpeechFrames = 0;
       this.preRollChunks = [];
 
       const base64 = resampleAndEncodePCM(inputBuffer, sampleRate, 24000);
       if (!base64) return;
 
-      const gateThreshold = Math.max(0.045, this.noiseFloorRms * 1.25);
+      const gateThreshold = Math.max(0.038, this.noiseFloorRms * 1.2);
 
       if (micRms >= gateThreshold) {
-        // 用户近场有效发声，激活连续发射与保持窗 (Hangover 8 帧约 680ms)
-        this.listeningHangoverFrames = 8;
+        // 用户有效发声，激活连续发射与保持窗 (12 帧约 500ms 消除停顿吃字)
+        this.listeningHangoverFrames = 12;
         if (!this.isListeningSpeechActive) {
           this.isListeningSpeechActive = true;
           // 冲刷首字无损缓冲，保证“我”、“你”等首字无损还原
@@ -140,14 +152,14 @@ export class BargeInDetector {
         }
         onAudioChunk(base64);
       } else if (this.listeningHangoverFrames > 0) {
-        // 静音停顿保护期内继续发射，避免词句间停顿被截断
+        // 静音保护期内继续发射真实尾音，让服务端 VAD 迅速准确闭合
         this.listeningHangoverFrames--;
         onAudioChunk(base64);
       } else {
-        // 彻底归于环境静默，闭门阻断环境杂音推流，仅保留最后 2 帧循环预录
+        // 彻底归于静默，循环保留最后 3 帧
         this.isListeningSpeechActive = false;
         this.listeningPreRoll.push(base64);
-        if (this.listeningPreRoll.length > 2) {
+        if (this.listeningPreRoll.length > 3) {
           this.listeningPreRoll.shift();
         }
       }

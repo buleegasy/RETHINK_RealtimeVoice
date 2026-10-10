@@ -23,7 +23,6 @@ export class AudioGraphService {
   private audioElement: HTMLAudioElement | null = null;
 
   private isMuted: boolean = false;
-  private isAiThinking: boolean = false;
   private onLocalInterruptCallback: ((playedMs: number) => void) | null = null;
   private onPlaybackStateChange: ((isPlaying: boolean) => void) | null = null;
   private boundDeviceChangeListener: (() => void) | null = null;
@@ -106,7 +105,6 @@ export class AudioGraphService {
   }
 
   public setAiThinking(thinking: boolean): void {
-    this.isAiThinking = thinking;
     if (thinking) {
       this.bargeInDetector.reset();
     }
@@ -248,9 +246,7 @@ export class AudioGraphService {
       sampleRate: ctx.sampleRate,
       isMuted: this.isMuted,
       isAiSpeakingOrActive:
-        this.isAiThinking ||
-        this.playbackQueue.isAiSpeaking ||
-        this.playbackQueue.isPlaybackActive(),
+        this.playbackQueue.isAiSpeaking || this.playbackQueue.isPlaybackActive(),
       speakerRms,
       playedMs,
       onAudioChunk,

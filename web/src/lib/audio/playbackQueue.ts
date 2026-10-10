@@ -22,7 +22,7 @@ export class PlaybackQueue {
   private endDrainTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly MIN_TARGET_SEC: number = 0.04;
-  private readonly MAX_TARGET_SEC: number = 0.14;
+  private readonly MAX_TARGET_SEC: number = 0.16;
   private readonly JITTER_REBUFFER_SEC: number = 0.02;
   private adaptiveTargetSec: number = 0.06;
   private consecutiveSmoothChunks: number = 0;
@@ -130,7 +130,7 @@ export class PlaybackQueue {
       if (this.nextPlayTime < now) {
         this.adaptiveTargetSec = Math.min(this.MAX_TARGET_SEC, this.adaptiveTargetSec + 0.02);
         this.consecutiveSmoothChunks = 0;
-        this.nextPlayTime = now + 0.005;
+        this.nextPlayTime = now + 0.015;
       } else {
         this.consecutiveSmoothChunks++;
         if (this.consecutiveSmoothChunks > 30 && this.adaptiveTargetSec > this.MIN_TARGET_SEC) {

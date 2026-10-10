@@ -99,9 +99,9 @@ export class MiniMaxRealtimeClient {
   public async connect(localStream?: MediaStream): Promise<void> {
     this.isExplicitlyClosed = false;
     this.currentTurnDetectionMode = null;
-    const mode = this.options.transport || 'auto';
+    const mode = this.options.transport || (this.options.relayUrl ? 'websocket' : 'auto');
 
-    if (mode === 'webrtc' || mode === 'auto') {
+    if ((mode === 'webrtc' || mode === 'auto') && typeof RTCPeerConnection !== 'undefined') {
       try {
         const rtc = new MiniMaxWebRtcClient({
           sessionId: this.options.sessionId,
