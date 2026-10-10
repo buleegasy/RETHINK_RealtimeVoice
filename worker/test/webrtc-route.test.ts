@@ -36,10 +36,19 @@ describe('WebRTC 服务端 SDP 协商与路由端点测试', () => {
   });
 
   it('POST /api/voice/webrtc/offer 成功协商时返回 SDP Answer', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => 'v=0\r\nsdp_remote_answer\r\n',
-    } as any);
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('client_secrets')) {
+        return {
+          ok: true,
+          json: async () => ({ client_secret: { value: 'fake_ephemeral_token' } }),
+        };
+      }
+      return {
+        ok: true,
+        text: async () => 'v=0\r\nsdp_remote_answer\r\n',
+      };
+    });
 
     const mockEnv = {
       REALTIME_UPSTREAM_KEY: 'test-key',
@@ -68,11 +77,20 @@ describe('WebRTC 服务端 SDP 协商与路由端点测试', () => {
   });
 
   it('POST /api/voice/webrtc/offer 上游网关失败时应返回 502 错误并包含详细错误信息', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      text: async () => 'OperationNotSupported',
-    } as any);
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('client_secrets')) {
+        return {
+          ok: true,
+          json: async () => ({ client_secret: { value: 'fake_ephemeral_token' } }),
+        };
+      }
+      return {
+        ok: false,
+        status: 400,
+        text: async () => 'OperationNotSupported',
+      };
+    });
 
     const mockEnv = {
       REALTIME_UPSTREAM_KEY: 'test-key',

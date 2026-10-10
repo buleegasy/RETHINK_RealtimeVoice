@@ -185,18 +185,25 @@ export class RealtimeGatewayAdapter {
       };
     }
 
-    const endpoint = this.buildUpstreamWebRtcUrl(config.upstreamBaseUrl, config.upstreamModel);
-    const isDirect = this.isDirectLiveEndpoint(config.upstreamBaseUrl);
+    // 先申请临时会话密钥
+    const tokenRes = await this.createEphemeralToken(config);
+    if (!tokenRes.ok || !tokenRes.clientSecret) {
+      return {
+        ok: false,
+        fallbackToWs: false,
+        error: `获取临时会话密钥失败: ${tokenRes.error || '未知错误'}`,
+      };
+    }
 
-    // 直连端点严禁发送 Bearer Token，必须使用 api-key 标头以防被误识别为非法令牌并返回 401
+    const endpoint =
+      tokenRes.callsUrl ||
+      this.buildUpstreamWebRtcUrl(config.upstreamBaseUrl, config.upstreamModel);
+
+    // 使用临时凭证进行 WebRTC 协商，要求使用 Bearer Token
     const headers: Record<string, string> = {
+      Authorization: `Bearer ${tokenRes.clientSecret}`,
       'Content-Type': 'application/sdp',
     };
-    if (isDirect) {
-      headers['api-key'] = config.upstreamKey;
-    } else {
-      headers['Authorization'] = `Bearer ${config.upstreamKey}`;
-    }
 
     try {
       const res = await fetch(endpoint, {
