@@ -430,17 +430,23 @@ export class RealtimeGatewayAdapter {
     upstreamModel?: string,
   ): Record<string, unknown> {
     const upstreamPayload = { ...cleanSession };
-    delete upstreamPayload.type;
-
-    // Azure OpenAI strict schema forbids `model` inside the session body
-    delete upstreamPayload.model;
 
     const isMiniMax = upstreamModel?.toLowerCase().includes('minimax');
     if (isMiniMax) {
+      delete upstreamPayload.type;
+      delete upstreamPayload.model;
       delete upstreamPayload.turn_detection;
       delete upstreamPayload.input_audio_transcription;
     } else {
       // Azure / OpenAI strict schema compliance
+      // "type": "realtime" is REQUIRED by Azure OpenAI /client_secrets
+      if (!upstreamPayload.type) {
+        upstreamPayload.type = 'realtime';
+      }
+      if (upstreamModel && !upstreamPayload.model) {
+        upstreamPayload.model = upstreamModel;
+      }
+
       delete upstreamPayload.audio;
       delete upstreamPayload.max_output_tokens;
 
