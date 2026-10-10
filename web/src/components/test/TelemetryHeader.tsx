@@ -110,7 +110,15 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
                       : 'bg-purple-500/30 text-purple-300 border border-purple-500/40 font-bold'
                   : 'text-slate-400 hover:text-slate-200'
               } ${isCallActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title={isCallActive ? '通话中锁定当前通道' : `切换语音链路策略至 ${t}`}
+              title={
+                isCallActive
+                  ? '通话中锁定当前通道'
+                  : t === 'auto'
+                    ? '自适应模式 (推荐): 优先探测 WebRTC，若上游暂不支持 SDP 则无感回退至 WS'
+                    : t === 'webrtc'
+                      ? '强制 WebRTC 直连: 需上游网关开放 SDP 端点，上游不支持时将抛错'
+                      : '强制 WebSocket 链路: 采用经典稳定全双工网关'
+              }
             >
               {t === 'auto' ? '自适应' : t === 'webrtc' ? 'WebRTC' : 'WS'}
             </button>

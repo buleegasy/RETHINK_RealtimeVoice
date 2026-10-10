@@ -141,7 +141,11 @@ export class MiniMaxRealtimeClient {
       }
 
       if (mode === 'webrtc') {
-        this.callbacks.onError?.(new Error('WebRTC connection failed'));
+        this.callbacks.onError?.(
+          new Error(
+            'WebRTC connection failed: 上游中继未开放 WebRTC SDP 协商端点或网络 UDP 阻断，建议在面板切换为【自适应】或【WS】链路',
+          ),
+        );
         return;
       }
     }
