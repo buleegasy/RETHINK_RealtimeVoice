@@ -117,7 +117,7 @@ describe('五大扩展管线契约与核心算法验证 (Pipelines & Providers)'
       expect(pipeline.getHistory().length).toBe(1);
     });
 
-    it('正确过滤 Whisper 前导标点与幻觉词 (",然后" 与 ",要是你想说啥")', () => {
+    it('正确过滤语音转写前导标点与幻觉词 (",然后" 与 ",要是你想说啥")', () => {
       const pipeline = new BufferedTranscriptionPipeline();
 
       pipeline.feedDelta('user', ',然后我真的感觉学业压力好大');
@@ -154,7 +154,7 @@ describe('五大扩展管线契约与核心算法验证 (Pipelines & Providers)'
       pipeline.feedDelta('user', '草稿流式片段');
       expect(emitted[emitted.length - 1]).toBe('草稿流式片段');
 
-      // 收到 Whisper 终态完整文本
+      // 收到实时转写终态完整文本
       pipeline.setCompletedTranscript('user', ',然后这是完整经过声学优化的句子');
       expect(emitted[emitted.length - 1]).toBe('这是完整经过声学优化的句子');
 

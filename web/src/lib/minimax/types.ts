@@ -85,3 +85,18 @@ export interface MiniMaxClientCallbacks {
   onRemoteStream?: (stream: MediaStream) => void;
   onTransportChange?: (transport: 'webrtc' | 'websocket') => void;
 }
+
+export interface MiniMaxClientOptions {
+  relayUrl?: string;
+  sessionConfig?: MiniMaxSessionConfig;
+  callbacks?: MiniMaxClientCallbacks;
+  maxReconnectAttempts?: number;
+  sendGreetingOnConnect?: boolean;
+  userId?: string;
+  username?: string;
+  sessionId?: string;
+  token?: string;
+  transport?: 'webrtc' | 'websocket' | 'auto';
+  offerEndpoint?: string;
+  iceServers?: RTCIceServer[];
+}

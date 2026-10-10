@@ -1,4 +1,5 @@
 import { base64PCMToAudioBuffer } from './audioResampler';
+import { applyImmediateStop, scheduleFadeOutStop } from './fadeHelper';
 
 export interface PlaybackStateListener {
   onPlaybackStateChange: (isPlaying: boolean) => void;
@@ -249,37 +250,13 @@ export class PlaybackQueue {
     };
 
     if ((sourcesToStop.length === 0 && !wasSpeaking) || fadeDurationMs <= 0) {
-      restoreGain();
-      for (const s of sourcesToStop) {
-        try {
-          s.stop();
-          s.disconnect();
-        } catch {}
-      }
+      applyImmediateStop(sourcesToStop, ctx, outputGainNode);
       this.pendingCleanupSources = [];
       this.nextPlayTime = ctx.currentTime;
       return;
     }
 
-    const fadeEndTime = ctx.currentTime + fadeDurationMs / 1000;
-    try {
-      outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
-      outputGainNode.gain.setValueAtTime(
-        Math.max(0.001, outputGainNode.gain.value),
-        ctx.currentTime,
-      );
-      outputGainNode.gain.exponentialRampToValueAtTime(0.0001, fadeEndTime);
-    } catch {}
-
-    for (const s of sourcesToStop) {
-      try {
-        s.stop(fadeEndTime);
-      } catch {
-        try {
-          s.stop();
-        } catch {}
-      }
-    }
+    scheduleFadeOutStop(sourcesToStop, ctx, outputGainNode, fadeDurationMs);
 
     const timerEpoch = this.playbackEpoch;
     this.stopPlaybackTimer = setTimeout(() => {

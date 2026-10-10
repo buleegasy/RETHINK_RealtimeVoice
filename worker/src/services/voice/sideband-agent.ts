@@ -1,8 +1,10 @@
 import { CbtStateMachine } from '../../lib/cbt-fsm';
-import { BargeInCoordinator } from './barge-in-coordinator';
-import { CrisisHandler } from './crisis-handler';
-import { ShadowReasoningPipeline } from './shadow-reasoning-pipeline';
-import { isL1Crisis, checkL2FlashSafety } from '../../lib/safety-filter';
+import { isL1Crisis } from '../../lib/safety-filter';
+import type { BargeInCoordinator } from './barge-in-coordinator';
+import type { CrisisHandler } from './crisis-handler';
+import type { ShadowReasoningPipeline } from './shadow-reasoning-pipeline';
+import { SpeechTurnManager } from './sideband/speech-turn-manager';
+import { SidebandDispatcher } from './sideband/sideband-dispatcher';
 
 export interface SidebandAgentConfig {
   sessionId: string;
@@ -28,19 +30,19 @@ export interface SidebandAgentConfig {
  * 职责：作为全双工语音会话的独立控制与认知平面，托管转写监听、L1/L2 双轨安全熔断、CBT 状态机及思维注入
  */
 export class SidebandAgent {
-  private readonly dialogueHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  private readonly turnManager = new SpeechTurnManager();
+  private readonly dispatcher: SidebandDispatcher;
   private readonly cbtFsm = new CbtStateMachine();
   private readonly processedItemIds = new Set<string>();
   private activeDelegationId: string | null = null;
   private attachWs: WebSocket | null = null;
   private studentName: string;
-  private userSpeechBuffer: string = '';
-  private assistantSpeechBuffer: string = '';
   private readonly enableShadowReasoning: boolean;
 
   constructor(private readonly config: SidebandAgentConfig) {
     this.studentName = config.studentName;
     this.enableShadowReasoning = config.enableShadowReasoning ?? true;
+    this.dispatcher = new SidebandDispatcher(config);
   }
 
   public attachControlStream(ws: WebSocket): void {
@@ -48,33 +50,33 @@ export class SidebandAgent {
   }
 
   public finalizeAssistantTurn(): void {
-    if (this.userSpeechBuffer.trim()) {
+    if (this.turnManager.userBuffer.trim()) {
       this.finalizeUserTurn();
     }
-    if (this.assistantSpeechBuffer.trim()) {
-      const text = this.assistantSpeechBuffer.trim();
-      this.assistantSpeechBuffer = '';
-      this.dialogueHistory.push({ role: 'assistant', content: text });
-      this.cbtFsm.recordTurn('assistant');
+    if (this.turnManager.assistantBuffer.trim()) {
+      const recorded = this.turnManager.recordAssistantTurn(this.turnManager.assistantBuffer);
+      if (recorded) {
+        this.cbtFsm.recordTurn('assistant');
+      }
     }
   }
 
   public finalizeUserTurn(): void {
-    if (this.userSpeechBuffer.trim()) {
-      const text = this.userSpeechBuffer.trim();
-      this.userSpeechBuffer = '';
+    if (this.turnManager.userBuffer.trim()) {
+      const text = this.turnManager.userBuffer.trim();
+      this.turnManager.userBuffer = '';
       void this.processUserSpeech(text);
     }
   }
 
   public hasPendingUserSpeech(): boolean {
-    return Boolean(this.userSpeechBuffer.trim());
+    return Boolean(this.turnManager.userBuffer.trim());
   }
 
   public getDialogueHistory(): Array<{ role: 'user' | 'assistant'; content: string }> {
     this.finalizeUserTurn();
     this.finalizeAssistantTurn();
-    return this.dialogueHistory;
+    return this.turnManager.history;
   }
 
   public getCbtStage(): string {
@@ -97,9 +99,6 @@ export class SidebandAgent {
     this.activeDelegationId = id;
   }
 
-  /**
-   * 监听上游下行事件并提取旁路认知要素
-   */
   public async handleUpstreamEvent(payload: any): Promise<void> {
     if (!payload || typeof payload !== 'object') return;
 
@@ -114,7 +113,7 @@ export class SidebandAgent {
     ) {
       this.config.coordinator.interrupt();
       this.finalizeAssistantTurn();
-      this.userSpeechBuffer = '';
+      this.turnManager.userBuffer = '';
       return;
     }
 
@@ -124,17 +123,16 @@ export class SidebandAgent {
       payload.type === 'input_audio_transcription.delta'
     ) {
       const delta = payload.delta || payload.transcript || payload.text || '';
-      // 若已有助手音频缓存尚未提交，说明用户插话打断，立即归档助手轮次
-      if (this.assistantSpeechBuffer.trim()) {
+      if (this.turnManager.assistantBuffer.trim()) {
         this.finalizeAssistantTurn();
       }
-      this.userSpeechBuffer += delta;
+      this.turnManager.appendUserBuffer(delta);
       return;
     }
 
     if (payload.type === 'session.output_transcript.delta') {
       const delta = payload.delta || payload.transcript || payload.text || '';
-      this.assistantSpeechBuffer += delta;
+      this.turnManager.appendAssistantBuffer(delta);
       return;
     }
 
@@ -142,7 +140,7 @@ export class SidebandAgent {
       payload.type === 'session.input_audio.speech_stopped' ||
       payload.type === 'session.output_audio.delta'
     ) {
-      if (this.userSpeechBuffer.trim()) {
+      if (this.turnManager.userBuffer.trim()) {
         this.finalizeUserTurn();
       }
     }
@@ -150,7 +148,7 @@ export class SidebandAgent {
     const userText = this.extractTranscriptText(payload);
     const itemId = payload.item_id || payload.item?.id || payload.event_id;
     if (userText) {
-      this.userSpeechBuffer = '';
+      this.turnManager.userBuffer = '';
       await this.processUserSpeech(userText, itemId);
       return;
     }
@@ -158,9 +156,6 @@ export class SidebandAgent {
     this.recordAssistantTranscript(payload);
   }
 
-  /**
-   * 处理用户有效发言的旁路认知推演与安全审计
-   */
   public async processUserSpeech(userText: string, itemId?: string): Promise<void> {
     const trimmed = (userText || '').trim();
     if (!trimmed) return;
@@ -174,28 +169,12 @@ export class SidebandAgent {
       }
     }
 
-    const lastTurn = this.dialogueHistory[this.dialogueHistory.length - 1];
-    if (
-      lastTurn &&
-      lastTurn.role === 'user' &&
-      (lastTurn.content === trimmed || lastTurn.content.includes(trimmed))
-    ) {
-      return;
-    }
-    if (lastTurn && lastTurn.role === 'user' && trimmed.startsWith(lastTurn.content)) {
-      lastTurn.content = trimmed;
-      return;
-    }
-    if (lastTurn && lastTurn.role === 'user' && !this.assistantSpeechBuffer.trim()) {
-      lastTurn.content = `${lastTurn.content}${trimmed.startsWith('，') || trimmed.startsWith('。') || trimmed.startsWith(',') ? '' : '，'}${trimmed}`;
-      return;
-    }
+    const isNewTurn = this.turnManager.recordUserTurn(trimmed);
+    if (!isNewTurn) return;
 
-    this.dialogueHistory.push({ role: 'user', content: trimmed });
     this.cbtFsm.recordTurn('user');
     const { sequenceId, signal } = this.config.coordinator.nextTurn();
 
-    // 1. L1 边缘即时硬过滤
     if (isL1Crisis(trimmed)) {
       this.config.crisisHandler.triggerIntervention('L1', 'L1本地即时硬过滤命中危机敏感词', [
         '自伤自杀危机',
@@ -204,62 +183,31 @@ export class SidebandAgent {
       return;
     }
 
-    // 非云端直连模式下触发显式流式回复
     if (!this.config.isDirectLive) {
       this.triggerTurnResponse(sequenceId, signal);
     }
 
-    // 2. L2 异步语义旁路熔断
-    this.dispatchL2SafetyCheck(trimmed, sequenceId);
+    this.dispatcher.dispatchL2Safety(trimmed, sequenceId);
 
-    // 3. 影子大脑认知指导推演与旁路注入（若开启则异步非阻塞执行）
     if (this.enableShadowReasoning) {
-      this.dispatchShadowReasoning(trimmed, sequenceId, signal).catch(() => {});
+      this.dispatcher
+        .dispatchShadow(
+          trimmed,
+          sequenceId,
+          signal,
+          this.turnManager.history,
+          this.studentName,
+          (name) => {
+            if (!this.studentName) this.studentName = name;
+          },
+          (hint) => this.injectCognitiveGuidance(hint),
+        )
+        .catch(() => {});
     }
   }
 
-  /**
-   * 旁路注入思维帧 (session.thinking.append / instructions)
-   */
   public injectCognitiveGuidance(hint: string): void {
-    const { upstreamWs, isDirectLive } = this.config;
-    const trimmed = hint.trim();
-
-    if (this.attachWs && this.attachWs.readyState === WebSocket.OPEN) {
-      try {
-        this.attachWs.send(
-          JSON.stringify({
-            type: 'rethink.sideband.directive',
-            cognitiveHint: trimmed,
-            timestamp: Date.now(),
-          }),
-        );
-      } catch {}
-    }
-
-    if (upstreamWs.readyState !== WebSocket.OPEN) return;
-
-    if (isDirectLive) {
-      if (this.activeDelegationId) {
-        upstreamWs.send(
-          JSON.stringify({
-            type: 'session.thinking.append',
-            delegation_id: this.activeDelegationId,
-            thinking: `【影子大脑认知指导】：${trimmed}`,
-          }),
-        );
-      }
-    } else {
-      upstreamWs.send(
-        JSON.stringify({
-          type: 'session.update',
-          session: {
-            type: 'realtime',
-            instructions: `【影子大脑认知指导】：${trimmed}。请以同校同级死党语气，自然转化为高中生日常口语交流，并在后续对话中自然贯彻此认知引导。`,
-          },
-        }),
-      );
-    }
+    this.dispatcher.injectGuidance(hint, this.activeDelegationId, this.attachWs);
   }
 
   private triggerTurnResponse(seq: number, signal: AbortSignal): void {
@@ -295,7 +243,7 @@ export class SidebandAgent {
   }
 
   private recordAssistantTranscript(payload: any): void {
-    if (this.userSpeechBuffer.trim()) {
+    if (this.turnManager.userBuffer.trim()) {
       this.finalizeUserTurn();
     }
     const explicitText = payload.transcript || payload.text;
@@ -304,9 +252,10 @@ export class SidebandAgent {
         payload.type === 'session.output_transcript.completed') &&
       explicitText
     ) {
-      this.assistantSpeechBuffer = '';
-      this.dialogueHistory.push({ role: 'assistant', content: explicitText });
-      this.cbtFsm.recordTurn('assistant');
+      const recorded = this.turnManager.recordAssistantTurn(explicitText);
+      if (recorded) {
+        this.cbtFsm.recordTurn('assistant');
+      }
       return;
     }
 
@@ -314,87 +263,12 @@ export class SidebandAgent {
       (payload.type === 'response.done' ||
         payload.type === 'session.output_audio.done' ||
         payload.type === 'session.output_transcript.completed') &&
-      this.assistantSpeechBuffer.trim()
+      this.turnManager.assistantBuffer.trim()
     ) {
-      const fullText = this.assistantSpeechBuffer.trim();
-      this.assistantSpeechBuffer = '';
-      this.dialogueHistory.push({ role: 'assistant', content: fullText });
-      this.cbtFsm.recordTurn('assistant');
+      const recorded = this.turnManager.recordAssistantTurn(this.turnManager.assistantBuffer);
+      if (recorded) {
+        this.cbtFsm.recordTurn('assistant');
+      }
     }
-  }
-
-  private dispatchL2SafetyCheck(userText: string, seq: number): void {
-    const { serverWs, coordinator, crisisHandler, openRouterConfig } = this.config;
-    const startTime = Date.now();
-
-    checkL2FlashSafety(userText, {
-      apiKey: openRouterConfig.openRouterKey,
-      baseUrl: openRouterConfig.openRouterBaseUrl,
-      signal: AbortSignal.timeout(5000),
-    })
-      .then((isCrisis) => {
-        if (serverWs.readyState === WebSocket.OPEN) {
-          serverWs.send(
-            JSON.stringify({
-              type: 'rethink.telemetry.safety_check',
-              turnSequence: seq,
-              isCrisis,
-              durationMs: Date.now() - startTime,
-              timestamp: Date.now(),
-            }),
-          );
-        }
-        if (isCrisis && !crisisHandler.isTriggered) {
-          coordinator.interrupt();
-          crisisHandler.triggerIntervention('L2', 'L2 DeepSeek V4 Flash语义熔断命中危机', [
-            '自伤自杀危机',
-            '语义旁路熔断',
-          ]);
-        }
-      })
-      .catch(() => {});
-  }
-
-  private async dispatchShadowReasoning(
-    userText: string,
-    seq: number,
-    signal: AbortSignal,
-  ): Promise<void> {
-    const { shadowPipeline, serverWs, coordinator, situationalMemory } = this.config;
-    const startTime = Date.now();
-
-    try {
-      const hint = await shadowPipeline.execute({
-        userText,
-        dialogueHistory: this.dialogueHistory,
-        studentName: this.studentName,
-        situationalMemory,
-        signal,
-        isTurnValid: () => coordinator.isValid(seq) && !signal.aborted,
-        onExtractedName: (name) => {
-          if (!this.studentName) this.studentName = name;
-        },
-      });
-
-      if (signal.aborted || !coordinator.isValid(seq)) return;
-
-      if (serverWs.readyState === WebSocket.OPEN) {
-        serverWs.send(
-          JSON.stringify({
-            type: 'rethink.telemetry.shadow_directive',
-            turnSequence: seq,
-            userText,
-            cognitiveHint: hint,
-            durationMs: Date.now() - startTime,
-            fallback: !hint,
-            timestamp: Date.now(),
-          }),
-        );
-      }
-
-      if (hint) {
-        this.injectCognitiveGuidance(hint);
-      }
-    } catch {}
   }
 }

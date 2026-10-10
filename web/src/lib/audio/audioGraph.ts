@@ -1,7 +1,17 @@
 import { AUDIO_CONSTRAINTS } from '../minimax/constants';
-import { AUDIO_WORKLET_PROCESSOR_CODE, WORKLET_PROCESSOR_NAME } from './workletProcessor';
 import { PlaybackQueue } from './playbackQueue';
 import { BargeInDetector } from './bargeInDetector';
+import { computeRmsLevel } from './levelMeter';
+import { setupRemoteWebRtcStream } from './remoteStreamPlayer';
+import { buildOutputGraph, teardownOutputGraph } from './outputGraphBuilder';
+import {
+  buildInputPipeline,
+  setupAudioProcessor,
+  teardownInputNodes,
+  reconnectInputStream,
+} from './inputGraphBuilder';
+import { playDecodedAudioUrl, playDecodedBase64Audio } from './audioBufferPlayer';
+import { bindDeviceWatcher, unbindDeviceWatcher } from './deviceWatcher';
 
 /**
  * 客户端 Web Audio 拓扑调度核心服务 (AudioGraphService)
@@ -50,14 +60,12 @@ export class AudioGraphService {
   public set consecutiveSpeechFrames(val: number) {
     this.bargeInDetector.consecutiveSpeechFrames = val;
   }
-
   public get preRollChunks(): string[] {
     return this.bargeInDetector.preRollChunks;
   }
   public set preRollChunks(val: string[]) {
     this.bargeInDetector.preRollChunks = val;
   }
-
   public get stopPlaybackTimer(): ReturnType<typeof setTimeout> | null {
     return this.playbackQueue.stopPlaybackTimer;
   }
@@ -81,19 +89,15 @@ export class AudioGraphService {
   public setOnLocalInterrupt(callback: (playedMs: number) => void): void {
     this.onLocalInterruptCallback = callback;
   }
-
   public setOnPlaybackStateChange(callback: (isPlaying: boolean) => void): void {
     this.onPlaybackStateChange = callback;
   }
-
   public isPlaybackActive(): boolean {
     return this.playbackQueue.isPlaybackActive();
   }
-
   public getJitterMetrics() {
     return this.playbackQueue.getJitterMetrics(this.audioCtx);
   }
-
   public updateNetworkQuality(rttMs: number): void {
     this.playbackQueue.updateNetworkQuality(rttMs);
   }
@@ -118,120 +122,63 @@ export class AudioGraphService {
   public async setupWebRtcRemoteStream(stream: MediaStream): Promise<void> {
     const ctx = await this.initAudioContext();
     this.ensureOutputGraph(ctx);
-
-    try {
-      if (this.remoteMediaStreamSource) {
-        try {
-          this.remoteMediaStreamSource.disconnect();
-        } catch {}
-        this.remoteMediaStreamSource = null;
-      }
-      this.remoteMediaStreamSource = ctx.createMediaStreamSource(stream);
-      // 仅将远端音频轨接入 speakerAnalyserNode 用于电平监控与打断检测，绝不连接到 outputGainNode 或 ctx.destination！
-      // 声音由下方的 HTMLAudioElement 硬件直通播放，杜绝双重播放与混响！
-      if (this.speakerAnalyserNode) {
-        this.remoteMediaStreamSource.connect(this.speakerAnalyserNode);
-      }
-    } catch (e) {
-      console.warn('[AudioGraph] Web Audio 媒体流路由警告:', e);
-    }
-
-    if (typeof document !== 'undefined') {
+    if (this.remoteMediaStreamSource) {
       try {
-        if (!this.audioElement) {
-          this.audioElement = new Audio();
-          this.audioElement.autoplay = true;
-          // @ts-expect-error playsInline
-          this.audioElement.playsInline = true;
-        }
-        this.audioElement.srcObject = stream;
-        await this.audioElement.play().catch(() => {});
+        this.remoteMediaStreamSource.disconnect();
       } catch {}
+      this.remoteMediaStreamSource = null;
     }
+    const res = await setupRemoteWebRtcStream(
+      ctx,
+      stream,
+      this.speakerAnalyserNode,
+      this.audioElement,
+    );
+    this.remoteMediaStreamSource = res.remoteSource;
+    this.audioElement = res.audioElement;
   }
 
   public async reinitInputStream(): Promise<void> {
     if (!this.audioCtx) return;
-    try {
-      if (this.mediaStream) {
-        this.mediaStream.getTracks().forEach((t) => t.stop());
-        this.mediaStream = null;
-      }
-      if (this.sourceNode) {
-        try {
-          this.sourceNode.disconnect();
-        } catch {}
-        this.sourceNode = null;
-      }
-      this.mediaStream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS);
-      this.sourceNode = this.audioCtx.createMediaStreamSource(this.mediaStream);
-      if (this.highpassFilterNode) {
-        this.sourceNode.connect(this.highpassFilterNode);
-      } else if (this.inputGainNode) {
-        this.sourceNode.connect(this.inputGainNode);
-      } else if (this.analyserNode) {
-        this.sourceNode.connect(this.analyserNode);
-      }
-    } catch {}
+    const res = await reconnectInputStream(
+      this.audioCtx,
+      this.mediaStream,
+      this.sourceNode,
+      this.highpassFilterNode,
+      this.inputGainNode,
+      this.analyserNode,
+      AUDIO_CONSTRAINTS,
+    );
+    if (res) {
+      this.mediaStream = res.stream;
+      this.sourceNode = res.source;
+    }
   }
 
   public async startRecording(onAudioChunk: (pcm16Base64: string) => void): Promise<void> {
     const ctx = await this.initAudioContext();
-
     this.mediaStream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS);
-    this.sourceNode = ctx.createMediaStreamSource(this.mediaStream);
 
-    this.highpassFilterNode = ctx.createBiquadFilter();
-    this.highpassFilterNode.type = 'highpass';
-    this.highpassFilterNode.frequency.setValueAtTime(120, ctx.currentTime);
-    this.highpassFilterNode.Q.setValueAtTime(0.7, ctx.currentTime);
-
-    this.inputGainNode = ctx.createGain();
-    this.inputGainNode.gain.setValueAtTime(1.15, ctx.currentTime);
-
-    this.analyserNode = ctx.createAnalyser();
-    this.analyserNode.fftSize = 256;
-    this.analyserNode.smoothingTimeConstant = 0.5;
+    const inputPipeline = buildInputPipeline(ctx, this.mediaStream);
+    this.sourceNode = inputPipeline.sourceNode;
+    this.highpassFilterNode = inputPipeline.highpassFilterNode;
+    this.inputGainNode = inputPipeline.inputGainNode;
+    this.analyserNode = inputPipeline.analyserNode;
 
     this.bargeInDetector.resetWarmUp(4);
-    this.sourceNode.connect(this.highpassFilterNode);
-    this.highpassFilterNode.connect(this.inputGainNode);
-    this.inputGainNode.connect(this.analyserNode);
 
-    let useWorklet = false;
-    if (
-      typeof window !== 'undefined' &&
-      ctx.audioWorklet &&
-      typeof ctx.audioWorklet.addModule === 'function' &&
-      typeof AudioWorkletNode !== 'undefined'
-    ) {
-      try {
-        const blob = new Blob([AUDIO_WORKLET_PROCESSOR_CODE], { type: 'application/javascript' });
-        const blobUrl = URL.createObjectURL(blob);
-        await ctx.audioWorklet.addModule(blobUrl);
-        URL.revokeObjectURL(blobUrl);
-
-        this.workletNode = new AudioWorkletNode(ctx, WORKLET_PROCESSOR_NAME);
-        this.workletNode.port.onmessage = (event: MessageEvent) => {
-          if (event.data?.eventType === 'audio_chunk' && event.data.buffer) {
-            this.handleInputChunk(event.data.buffer, ctx, onAudioChunk);
-          }
-        };
-
-        this.inputGainNode.connect(this.workletNode);
-        this.workletNode.connect(ctx.destination);
-        useWorklet = true;
-      } catch {
-        useWorklet = false;
-      }
-    }
-
-    if (!useWorklet) {
-      this.setupScriptProcessorFallback(ctx, onAudioChunk);
-    }
+    const { workletNode, processorNode } = await setupAudioProcessor(
+      ctx,
+      this.inputGainNode,
+      (buffer) => this.handleInputChunk(buffer, ctx, onAudioChunk),
+    );
+    this.workletNode = workletNode;
+    this.processorNode = processorNode;
 
     this.ensureOutputGraph(ctx);
-    this.bindDeviceChangeListener();
+    this.boundDeviceChangeListener = bindDeviceWatcher(() => {
+      this.reinitInputStream().catch(() => {});
+    });
     this.playbackQueue.resetTime(ctx.currentTime);
   }
 
@@ -265,96 +212,34 @@ export class AudioGraphService {
     });
   }
 
-  private setupScriptProcessorFallback(
-    ctx: AudioContext,
-    onAudioChunk: (pcm16Base64: string) => void,
-  ): void {
-    this.processorNode = ctx.createScriptProcessor(2048, 1, 1);
-    this.processorNode.onaudioprocess = (e) => {
-      const out = e.outputBuffer.getChannelData(0);
-      out.fill(0);
-      const inputBuffer = e.inputBuffer.getChannelData(0);
-      this.handleInputChunk(inputBuffer, ctx, onAudioChunk);
-    };
-
-    if (this.inputGainNode) {
-      this.inputGainNode.connect(this.processorNode);
-    }
-    this.processorNode.connect(ctx.destination);
-  }
-
   private ensureOutputGraph(ctx: AudioContext): GainNode {
     if (!this.outputGainNode) {
-      this.outputGainNode = ctx.createGain();
-      this.outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
-
-      this.compressorNode = ctx.createDynamicsCompressor();
-      this.compressorNode.threshold.setValueAtTime(-18, ctx.currentTime);
-      this.compressorNode.knee.setValueAtTime(12, ctx.currentTime);
-      this.compressorNode.ratio.setValueAtTime(3, ctx.currentTime);
-      this.compressorNode.attack.setValueAtTime(0.003, ctx.currentTime);
-      this.compressorNode.release.setValueAtTime(0.1, ctx.currentTime);
-
-      this.speakerAnalyserNode = ctx.createAnalyser();
-      this.speakerAnalyserNode.fftSize = 256;
-      this.speakerAnalyserNode.smoothingTimeConstant = 0.3;
-
-      this.outputGainNode.connect(this.compressorNode);
-      this.compressorNode.connect(ctx.destination);
-      this.compressorNode.connect(this.speakerAnalyserNode);
-
-      // 旁路静音汇流节点：保持增益为 0 并接入 destination，使浏览器底层持续调度计算 speakerAnalyserNode，但严禁从 WebAudio destination 二次出声
-      this.speakerSilentSinkNode = ctx.createGain();
-      this.speakerSilentSinkNode.gain.setValueAtTime(0, ctx.currentTime);
-      this.speakerAnalyserNode.connect(this.speakerSilentSinkNode);
-      this.speakerSilentSinkNode.connect(ctx.destination);
+      const output = buildOutputGraph(ctx);
+      this.outputGainNode = output.outputGainNode;
+      this.compressorNode = output.compressorNode;
+      this.speakerAnalyserNode = output.speakerAnalyserNode;
+      this.speakerSilentSinkNode = output.speakerSilentSinkNode;
     }
     return this.outputGainNode;
   }
 
   public async playAudioUrl(url: string, onEnded?: () => void): Promise<void> {
     const ctx = await this.initAudioContext();
-    try {
-      const res = await fetch(url);
-      const arrayBuffer = await res.arrayBuffer();
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-      const outputGain = this.ensureOutputGraph(ctx);
-      this.playbackQueue.playDecodedBuffer(
-        ctx,
-        audioBuffer,
-        outputGain,
-        this.analyserNode,
-        onEnded,
-      );
-    } catch {
-      onEnded?.();
-    }
+    const outputGain = this.ensureOutputGraph(ctx);
+    await playDecodedAudioUrl(ctx, url, outputGain, this.analyserNode, this.playbackQueue, onEnded);
   }
 
   public async playBase64Audio(base64Data: string, onEnded?: () => void): Promise<void> {
-    if (!base64Data) {
-      onEnded?.();
-      return;
-    }
     const ctx = await this.initAudioContext();
-    try {
-      const binary = atob(base64Data);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
-      const outputGain = this.ensureOutputGraph(ctx);
-      this.playbackQueue.playDecodedBuffer(
-        ctx,
-        audioBuffer,
-        outputGain,
-        this.analyserNode,
-        onEnded,
-      );
-    } catch {
-      onEnded?.();
-    }
+    const outputGain = this.ensureOutputGraph(ctx);
+    await playDecodedBase64Audio(
+      ctx,
+      base64Data,
+      outputGain,
+      this.analyserNode,
+      this.playbackQueue,
+      onEnded,
+    );
   }
 
   public getPlaybackDurationMs(): number {
@@ -386,17 +271,7 @@ export class AudioGraphService {
   }
 
   public getAudioLevel(): number {
-    if (!this.analyserNode || this.isMuted) return 0;
-    const dataArray = new Uint8Array(this.analyserNode.frequencyBinCount);
-    this.analyserNode.getByteTimeDomainData(dataArray);
-
-    let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-      const v = (dataArray[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / dataArray.length);
-    return Math.min(1, rms * 4);
+    return computeRmsLevel(this.analyserNode, this.isMuted);
   }
 
   public getInputLevel(): number {
@@ -404,79 +279,26 @@ export class AudioGraphService {
   }
 
   public getOutputLevel(): number {
-    if (!this.speakerAnalyserNode) return 0;
-    const dataArray = new Uint8Array(this.speakerAnalyserNode.frequencyBinCount);
-    this.speakerAnalyserNode.getByteTimeDomainData(dataArray);
-
-    let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-      const v = (dataArray[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / dataArray.length);
-    return Math.min(1, rms * 4);
-  }
-
-  private bindDeviceChangeListener(): void {
-    if (
-      !this.boundDeviceChangeListener &&
-      typeof navigator !== 'undefined' &&
-      navigator.mediaDevices
-    ) {
-      this.boundDeviceChangeListener = () => {
-        this.reinitInputStream().catch(() => {});
-      };
-      try {
-        navigator.mediaDevices.addEventListener('devicechange', this.boundDeviceChangeListener);
-      } catch {}
-    }
+    return computeRmsLevel(this.speakerAnalyserNode, false);
   }
 
   public stopRecording(): void {
-    if (this.mediaStream) {
-      try {
-        this.mediaStream.getTracks().forEach((t) => t.stop());
-      } catch {}
-      this.mediaStream = null;
-    }
-    if (this.workletNode) {
-      try {
-        this.workletNode.port.onmessage = null;
-        this.workletNode.disconnect();
-      } catch {}
-      this.workletNode = null;
-    }
-    if (this.processorNode) {
-      try {
-        this.processorNode.onaudioprocess = null;
-        this.processorNode.disconnect();
-      } catch {}
-      this.processorNode = null;
-    }
-    if (this.sourceNode) {
-      try {
-        this.sourceNode.disconnect();
-      } catch {}
-      this.sourceNode = null;
-    }
-    if (this.highpassFilterNode) {
-      try {
-        this.highpassFilterNode.disconnect();
-      } catch {}
-      this.highpassFilterNode = null;
-    }
-    if (this.inputGainNode) {
-      try {
-        this.inputGainNode.disconnect();
-      } catch {}
-      this.inputGainNode = null;
-    }
-    if (this.analyserNode) {
-      try {
-        this.analyserNode.disconnect();
-      } catch {}
-      this.analyserNode = null;
-    }
+    teardownInputNodes({
+      mediaStream: this.mediaStream,
+      workletNode: this.workletNode,
+      processorNode: this.processorNode,
+      sourceNode: this.sourceNode,
+      highpassFilterNode: this.highpassFilterNode,
+      inputGainNode: this.inputGainNode,
+      analyserNode: this.analyserNode,
+    });
+    this.mediaStream = null;
+    this.workletNode = null;
+    this.processorNode = null;
+    this.sourceNode = null;
+    this.highpassFilterNode = null;
+    this.inputGainNode = null;
+    this.analyserNode = null;
   }
 
   public isRecordingActive(): boolean {
@@ -486,56 +308,25 @@ export class AudioGraphService {
   public cleanup(): void {
     this.stopPlayback(0);
     this.stopRecording();
-    if (this.remoteMediaStreamSource) {
-      try {
-        this.remoteMediaStreamSource.disconnect();
-      } catch {}
-      this.remoteMediaStreamSource = null;
-    }
-    if (this.audioElement) {
-      try {
-        this.audioElement.pause();
-        this.audioElement.srcObject = null;
-      } catch {}
-      this.audioElement = null;
-    }
-    if (
-      this.boundDeviceChangeListener &&
-      typeof navigator !== 'undefined' &&
-      navigator.mediaDevices
-    ) {
-      try {
-        navigator.mediaDevices.removeEventListener('devicechange', this.boundDeviceChangeListener);
-      } catch {}
-      this.boundDeviceChangeListener = null;
-    }
-    if (this.speakerAnalyserNode) {
-      try {
-        this.speakerAnalyserNode.disconnect();
-      } catch {}
-      this.speakerAnalyserNode = null;
-    }
-    if (this.speakerSilentSinkNode) {
-      try {
-        this.speakerSilentSinkNode.disconnect();
-      } catch {}
-      this.speakerSilentSinkNode = null;
-    }
-    if (this.compressorNode) {
-      try {
-        this.compressorNode.disconnect();
-      } catch {}
-      this.compressorNode = null;
-    }
-    if (this.outputGainNode) {
-      try {
-        this.outputGainNode.disconnect();
-      } catch {}
-      this.outputGainNode = null;
-    }
-    if (this.audioCtx) {
-      this.audioCtx.close().catch(() => {});
-      this.audioCtx = null;
-    }
+    unbindDeviceWatcher(this.boundDeviceChangeListener);
+    this.boundDeviceChangeListener = null;
+    teardownOutputGraph({
+      outputGainNode: this.outputGainNode,
+      compressorNode: this.compressorNode,
+      speakerAnalyserNode: this.speakerAnalyserNode,
+      speakerSilentSinkNode: this.speakerSilentSinkNode,
+      remoteMediaStreamSource: this.remoteMediaStreamSource,
+      audioElement: this.audioElement,
+      audioCtx: this.audioCtx,
+    });
+    this.remoteMediaStreamSource = null;
+    this.audioElement = null;
+    this.speakerAnalyserNode = null;
+    this.speakerSilentSinkNode = null;
+    this.compressorNode = null;
+    this.outputGainNode = null;
+    this.audioCtx = null;
   }
 }
+
+export type AudioGraphController = AudioGraphService;

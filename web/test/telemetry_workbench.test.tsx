@@ -215,7 +215,7 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
       content: '模型回答',
       timestamp: 2000,
     });
-    // 收到 Whisper 终态转写更新
+    // 收到实时语音转写终态更新
     booth.addDialogueTurn({
       id: 'turn-user-1',
       role: 'user',

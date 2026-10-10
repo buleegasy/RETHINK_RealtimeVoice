@@ -1,82 +1,15 @@
 import { create } from 'zustand';
-import type {
-  AdminStats,
-  AdminCrisisItem,
-  AdminSessionItem,
-  UnmaskedIdentity,
-  CrisisAuditLog,
-  DispositionStatus,
-  UserProfile,
-} from '../types';
+import type { UserProfile, DispositionStatus } from '../types';
 import { AdminApiClient } from '../lib/api/adminApiClient';
+import type { AdminState } from './admin/adminTypes';
+import { playAdminBuzzer } from './admin/buzzer';
+import {
+  executeDeleteSession,
+  executeRestoreSession,
+  executeReEvaluateSession,
+} from './admin/adminSessionActions';
 
-interface AdminState {
-  isAuthenticated: boolean;
-  token: string | null;
-  teacherProfile: UserProfile | null;
-  activeTab: 'pulse' | 'crises' | 'sessions' | 'settings';
-  stats: AdminStats | null;
-  isLoadingStats: boolean;
-  statsError: string | null;
-  crises: AdminCrisisItem[];
-  sessions: AdminSessionItem[];
-  showArchived: boolean;
-  unmaskedMap: Record<string, UnmaskedIdentity>;
-  auditLogs: CrisisAuditLog[];
-  buzzerEnabled: boolean;
-  isLoading: boolean;
-  error: string | null;
-  selectedSession: AdminSessionItem | null;
-
-  sessionFilterTag: string | null;
-  crisisFilterStatus: DispositionStatus | 'all';
-  dismissedAlertSessionIds: string[];
-  lastStatsRefreshTime: number | null;
-
-  login: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
-  fetchStats: () => Promise<void>;
-  fetchCrises: () => Promise<void>;
-  fetchSessions: (crisisOnly?: boolean, includeDeleted?: boolean) => Promise<void>;
-  fetchAuditLogs: () => Promise<void>;
-  unmaskCrisis: (
-    sessionId: string,
-    passcode: string,
-    operatorName?: string,
-  ) => Promise<{ success: boolean; identity?: UnmaskedIdentity; error?: string }>;
-  updateDisposition: (
-    sessionId: string,
-    status: DispositionStatus,
-    note?: string,
-  ) => Promise<boolean>;
-  deleteSession: (
-    sessionId: string,
-    passcode: string,
-    reason: string,
-    operatorName?: string,
-  ) => Promise<{ success: boolean; error?: string }>;
-  restoreSession: (
-    sessionId: string,
-    passcode: string,
-    operatorName?: string,
-  ) => Promise<{ success: boolean; error?: string }>;
-  reEvaluateSession: (
-    sessionId: string,
-    transcript?: string,
-  ) => Promise<{ success: boolean; report?: any; session?: any; error?: string }>;
-  refreshAdminData: () => Promise<void>;
-  setShowArchived: (show: boolean) => void;
-  setBuzzerEnabled: (enabled: boolean) => void;
-  playBuzzer: () => void;
-  setActiveTab: (tab: 'pulse' | 'crises' | 'sessions' | 'settings') => void;
-  setSelectedSession: (session: AdminSessionItem | null) => void;
-  setSessionFilterTag: (tag: string | null) => void;
-  setCrisisFilterStatus: (status: DispositionStatus | 'all') => void;
-  dismissCrisisAlert: (sessionId: string) => void;
-  dismissAllCrisisAlerts: (sessionIds: string[]) => void;
-  navigateToSessionsWithTag: (tag?: string | null) => void;
-  navigateToCrisesWithStatus: (status?: DispositionStatus | 'all') => void;
-}
+export type { AdminState };
 
 const STORAGE_KEY = 'rethink_teacher_auth';
 
@@ -252,59 +185,21 @@ export const useAdminStore = create<AdminState>((set, get) => {
       reason: string,
       operatorName?: string,
     ) => {
-      try {
-        const op = operatorName || get().teacherProfile?.displayName || '心理专职教师';
-        const data = await AdminApiClient.deleteSession(sessionId, passcode, reason, op);
-        if (data.success) {
-          await get().refreshAdminData();
-          return { success: true };
-        }
-        return { success: false, error: data.error || '删除验证失败' };
-      } catch (err: any) {
-        return { success: false, error: err?.message || '网络异常' };
-      }
+      const op = operatorName || get().teacherProfile?.displayName || '心理专职教师';
+      return executeDeleteSession(sessionId, passcode, reason, op, () => get().refreshAdminData());
     },
 
     restoreSession: async (sessionId: string, passcode: string, operatorName?: string) => {
-      try {
-        const op = operatorName || get().teacherProfile?.displayName || '心理专职教师';
-        const data = await AdminApiClient.restoreSession(sessionId, passcode, op);
-        if (data.success) {
-          await get().refreshAdminData();
-          return { success: true };
-        }
-        return { success: false, error: data.error || '恢复操作失败' };
-      } catch (err: any) {
-        return { success: false, error: err?.message || '网络异常' };
-      }
+      const op = operatorName || get().teacherProfile?.displayName || '心理专职教师';
+      return executeRestoreSession(sessionId, passcode, op, () => get().refreshAdminData());
     },
 
     reEvaluateSession: async (sessionId: string, transcript?: string) => {
-      try {
-        const data = await AdminApiClient.reEvaluateSession(sessionId, transcript);
-        if (data.success && data.report) {
-          set((state) => ({
-            sessions: state.sessions.map((s) =>
-              s.sessionId === sessionId
-                ? {
-                    ...s,
-                    deidentifiedReport: data.report,
-                    crisisLevel: data.session?.crisisLevel ?? s.crisisLevel,
-                    isCrisis:
-                      data.session?.isCrisis ?? (data.session?.crisisLevel >= 3 || s.isCrisis),
-                    crisisSummary: data.session?.crisisSummary ?? s.crisisSummary,
-                    coreConcerns: data.session?.coreConcerns ?? s.coreConcerns,
-                    emotionalValence: data.session?.emotionalValence ?? s.emotionalValence,
-                  }
-                : s,
-            ),
-          }));
-          return { success: true, report: data.report, session: data.session };
-        }
-        return { success: false, error: data.error || '重新解析失败' };
-      } catch (err: any) {
-        return { success: false, error: err?.message || '网络异常' };
-      }
+      return executeReEvaluateSession(sessionId, transcript, (updater) => {
+        set((state) => ({
+          sessions: state.sessions.map((s) => (s.sessionId === sessionId ? updater(s) : s)),
+        }));
+      });
     },
 
     setShowArchived: (show: boolean) => {
@@ -317,38 +212,7 @@ export const useAdminStore = create<AdminState>((set, get) => {
     },
 
     playBuzzer: () => {
-      try {
-        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioCtxClass) return;
-        const ctx = new AudioCtxClass();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, ctx.currentTime);
-        osc.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.12, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        let cleaned = false;
-        const cleanup = () => {
-          if (cleaned) return;
-          cleaned = true;
-          try {
-            osc.disconnect();
-            gain.disconnect();
-            if (ctx.state !== 'closed') {
-              void ctx.close().catch(() => {});
-            }
-          } catch {}
-        };
-
-        osc.onended = cleanup;
-        osc.start();
-        osc.stop(ctx.currentTime + 0.4);
-        setTimeout(cleanup, 500);
-      } catch {}
+      playAdminBuzzer();
     },
 
     setActiveTab: (tab) => set({ activeTab: tab }),

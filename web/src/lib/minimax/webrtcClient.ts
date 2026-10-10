@@ -1,13 +1,8 @@
-import {
-  DEFAULT_RTC_ICE_SERVERS,
-  WEBRTC_DATA_CHANNEL_NAME,
-  DEFAULT_VOICE,
-  CBT_VOICE_TOOLS,
-  DEFAULT_VOICE_INSTRUCTIONS,
-  OPENING_GREETING,
-} from './constants';
+import { DEFAULT_RTC_ICE_SERVERS, WEBRTC_DATA_CHANNEL_NAME, OPENING_GREETING } from './constants';
 import type { MiniMaxClientCallbacks, MiniMaxSessionConfig, MiniMaxServerEvent } from './types';
-import { apiFetch } from '../api';
+import { waitForIceGathering, negotiateSdp } from './webrtc/sdpNegotiator';
+import { buildTurnDetectionPayload, buildWebRtcSessionUpdate } from './webrtc/payloadBuilder';
+import { dispatchDataChannelEvent } from './webrtc/dataChannelDispatcher';
 
 export interface MiniMaxWebRtcOptions {
   sessionId?: string;
@@ -83,72 +78,9 @@ export class MiniMaxWebRtcClient {
       const offer = await pc.createOffer({ offerToReceiveAudio: true });
       await pc.setLocalDescription(offer);
 
-      await this.waitForIceGathering(pc, 1200);
+      await waitForIceGathering(pc, 1200);
 
-      const sdpPayload = {
-        sdp: pc.localDescription?.sdp || offer.sdp,
-        sessionId: this.options.sessionId,
-        userId: this.options.userId,
-        username: this.options.username,
-        model: this.options.model || 'minimax-realtime',
-        voice: this.options.voice || DEFAULT_VOICE,
-        instructions: this.options.sessionConfig?.instructions || DEFAULT_VOICE_INSTRUCTIONS,
-      };
-
-      let remoteSdp = '';
-
-      // 1. 尝试通过临时会话密钥 (client_secrets) 发起端到端直连协商
-      try {
-        const sessionRes = await apiFetch('/api/voice/webrtc/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: this.options.model || 'minimax-realtime',
-            voice: this.options.voice || DEFAULT_VOICE,
-          }),
-        });
-        if (sessionRes.ok) {
-          const sessionData: any = await sessionRes.json().catch(() => ({}));
-          if (sessionData.clientSecret && sessionData.callsUrl) {
-            const directRes = await fetch(sessionData.callsUrl, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${sessionData.clientSecret}`,
-                'Content-Type': 'application/sdp',
-              },
-              body: pc.localDescription?.sdp || offer.sdp,
-            });
-            if (directRes.ok) {
-              remoteSdp = await directRes.text();
-            }
-          }
-        }
-      } catch (directErr) {
-        console.warn('[MiniMaxWebRtcClient] 临时密钥直连尝试跳过，使用中继协商:', directErr);
-      }
-
-      // 2. 若直连未取得 SDP Answer，通过 Worker 网关代理协商
-      if (!remoteSdp) {
-        const offerUrl = this.options.offerEndpoint || '/api/voice/webrtc/offer';
-        const res = await apiFetch(offerUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sdpPayload),
-        });
-
-        if (!res.ok) {
-          const errText = await res.text().catch(() => '');
-          this.cleanup();
-          throw new Error(`SDP 协商网络请求失败 (HTTP ${res.status}): ${errText}`);
-        }
-
-        const data = await res.json().catch(() => ({}));
-        if (!data.sdp) {
-          this.cleanup();
-          throw new Error(data.error || 'WebRTC 协商未返回有效 Remote SDP');
-        }
-        remoteSdp = data.sdp;
-      }
+      const remoteSdp = await negotiateSdp(pc, this.options, offer);
 
       await pc.setRemoteDescription({
         type: 'answer',
@@ -181,34 +113,7 @@ export class MiniMaxWebRtcClient {
   }
 
   public updateTurnDetection(mode: 'speaking' | 'listening'): void {
-    const vadConfig =
-      mode === 'speaking'
-        ? {
-            type: 'server_vad',
-            threshold: 0.85,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 600,
-            create_response: false,
-            interrupt_response: false,
-          }
-        : {
-            type: 'server_vad',
-            threshold: 0.65,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 600,
-            create_response: false,
-            interrupt_response: false,
-          };
-
-    this.sendEvent({
-      type: 'session.update',
-      session: {
-        turn_detection: vadConfig,
-        audio: {
-          input: { turn_detection: vadConfig },
-        },
-      },
-    });
+    this.sendEvent(buildTurnDetectionPayload(mode));
   }
 
   public interrupt(options?: { itemId?: string; audioEndMs?: number }): void {
@@ -230,34 +135,7 @@ export class MiniMaxWebRtcClient {
   }
 
   public sendSessionUpdate(customConfig?: Partial<MiniMaxSessionConfig>): void {
-    const config = { ...this.options.sessionConfig, ...customConfig };
-    this.sendEvent({
-      type: 'session.update',
-      session: {
-        modalities: config.modalities || ['audio', 'text'],
-        instructions: config.instructions || DEFAULT_VOICE_INSTRUCTIONS,
-        voice: config.voice || DEFAULT_VOICE,
-        audio: {
-          input: {
-            format: { type: 'audio/pcm', rate: 24000 },
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.65,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 600,
-              create_response: false,
-              interrupt_response: false,
-            },
-          },
-          output: {
-            format: { type: 'audio/pcm', rate: 24000 },
-            voice: config.voice || DEFAULT_VOICE,
-          },
-        },
-        tools: config.tools || CBT_VOICE_TOOLS,
-        tool_choice: 'auto',
-      },
-    });
+    this.sendEvent(buildWebRtcSessionUpdate(this.options, customConfig));
   }
 
   private setupPeerConnectionEvents(pc: RTCPeerConnection): void {
@@ -294,12 +172,26 @@ export class MiniMaxWebRtcClient {
       this.startKeepalive();
 
       if (this.options.sendGreetingOnConnect !== false) {
-        this.sendInitialGreeting();
+        this.sendEvent({
+          type: 'session.commentary.append',
+          content: OPENING_GREETING,
+          delegation_id: null,
+        });
       }
     };
 
     dc.onmessage = (event) => {
-      this.handleIncomingDataMessage(event.data);
+      try {
+        const text =
+          typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data);
+        const parsed: MiniMaxServerEvent = JSON.parse(text);
+        dispatchDataChannelEvent(parsed, this.callbacks, {
+          pingStartTime: this.pingStartTime,
+          onResponseCreated: (id) => {
+            this.currentResponseItemId = id;
+          },
+        });
+      } catch {}
     };
 
     dc.onclose = () => {
@@ -313,111 +205,6 @@ export class MiniMaxWebRtcClient {
     dc.onerror = (err) => {
       this.callbacks.onError?.(err);
     };
-  }
-
-  private handleIncomingDataMessage(rawData: any): void {
-    try {
-      const text = typeof rawData === 'string' ? rawData : new TextDecoder().decode(rawData);
-      const parsed: MiniMaxServerEvent = JSON.parse(text);
-      this.dispatchProtocolEvent(parsed);
-    } catch {}
-  }
-
-  private dispatchProtocolEvent(event: MiniMaxServerEvent): void {
-    const { type } = event;
-
-    if (
-      (type === 'response.audio_transcript.delta' || type === 'session.output_transcript.delta') &&
-      event.delta
-    ) {
-      this.callbacks.onTextDelta?.(event.delta);
-    } else if (
-      (type === 'conversation.item.input_audio_transcription.completed' ||
-        type === 'input_audio_transcription.completed' ||
-        type === 'session.input_transcript.completed') &&
-      (event.transcript || (event as any).text)
-    ) {
-      const text = event.transcript || (event as any).text || '';
-      if (text) {
-        this.callbacks.onTranscriptCompleted?.(text);
-        this.callbacks.onTranscriptDelta?.(text);
-      }
-    } else if (
-      (type === 'conversation.item.input_audio_transcription.delta' ||
-        type === 'input_audio_transcription.delta' ||
-        type === 'session.input_transcript.delta') &&
-      (event.transcript || (event as any).delta || (event as any).text)
-    ) {
-      const text = (event as any).delta || event.transcript || (event as any).text || '';
-      if (text) {
-        this.callbacks.onTranscriptDelta?.(text);
-      }
-    } else if (type === 'session.commentary.appended') {
-      this.callbacks.onTurnStart?.();
-    } else if (type === 'input_audio_buffer.speech_started') {
-      this.callbacks.onSpeechStarted?.();
-    } else if (type === 'input_audio_buffer.speech_stopped') {
-      this.callbacks.onSpeechStopped?.();
-    } else if (type === 'response.created') {
-      this.currentResponseItemId = event.response?.id || null;
-      this.callbacks.onTurnStart?.();
-    } else if (type === 'response.done') {
-      this.callbacks.onTurnEnd?.();
-    } else if (type === 'response.function_call_arguments.done' && event.name && event.call_id) {
-      let args = {};
-      try {
-        args = JSON.parse(event.arguments || '{}');
-      } catch {}
-      this.callbacks.onToolCall?.({
-        name: event.name,
-        callId: event.call_id,
-        args,
-      });
-    } else if (type === 'safety_check' && (event as any).check) {
-      this.callbacks.onSafetyCheck?.((event as any).check);
-    } else if (type === 'shadow_directive' && (event as any).directive) {
-      this.callbacks.onShadowDirective?.((event as any).directive);
-    } else if (type === 'crisis_interception') {
-      this.callbacks.onCrisisInterception?.({
-        message: (event as any).message || '触发高危心理防御拦截',
-        tier: (event as any).tier,
-      });
-    } else if (type === 'pong') {
-      if (this.pingStartTime > 0) {
-        const rtt = Date.now() - this.pingStartTime;
-        this.callbacks.onPingPong?.(rtt);
-      }
-    }
-  }
-
-  private sendInitialGreeting(): void {
-    this.sendEvent({
-      type: 'session.commentary.append',
-      content: OPENING_GREETING,
-      delegation_id: null,
-    });
-  }
-
-  private waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number): Promise<void> {
-    if (pc.iceGatheringState === 'complete') {
-      return Promise.resolve();
-    }
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        pc.removeEventListener('icecandidate', checkCandidate);
-        resolve();
-      }, timeoutMs);
-
-      const checkCandidate = (e: RTCPeerConnectionIceEvent) => {
-        if (!e.candidate || pc.iceGatheringState === 'complete') {
-          clearTimeout(timer);
-          pc.removeEventListener('icecandidate', checkCandidate);
-          resolve();
-        }
-      };
-
-      pc.addEventListener('icecandidate', checkCandidate);
-    });
   }
 
   private startKeepalive(): void {
