@@ -203,7 +203,6 @@ export class MiniMaxWebRtcClient {
     this.sendEvent({
       type: 'session.update',
       session: {
-        type: 'realtime',
         turn_detection: vadConfig,
         audio: {
           input: { turn_detection: vadConfig },
@@ -292,7 +291,6 @@ export class MiniMaxWebRtcClient {
     dc.onopen = () => {
       this.isConnected = true;
       this.callbacks.onOpen?.();
-      this.sendSessionUpdate();
       this.startKeepalive();
 
       if (this.options.sendGreetingOnConnect !== false) {
@@ -328,11 +326,15 @@ export class MiniMaxWebRtcClient {
   private dispatchProtocolEvent(event: MiniMaxServerEvent): void {
     const { type } = event;
 
-    if (type === 'response.audio_transcript.delta' && event.delta) {
+    if (
+      (type === 'response.audio_transcript.delta' || type === 'session.output_transcript.delta') &&
+      event.delta
+    ) {
       this.callbacks.onTextDelta?.(event.delta);
     } else if (
       (type === 'conversation.item.input_audio_transcription.completed' ||
-        type === 'input_audio_transcription.completed') &&
+        type === 'input_audio_transcription.completed' ||
+        type === 'session.input_transcript.completed') &&
       (event.transcript || (event as any).text)
     ) {
       const text = event.transcript || (event as any).text || '';
@@ -342,13 +344,16 @@ export class MiniMaxWebRtcClient {
       }
     } else if (
       (type === 'conversation.item.input_audio_transcription.delta' ||
-        type === 'input_audio_transcription.delta') &&
+        type === 'input_audio_transcription.delta' ||
+        type === 'session.input_transcript.delta') &&
       (event.transcript || (event as any).delta || (event as any).text)
     ) {
       const text = (event as any).delta || event.transcript || (event as any).text || '';
       if (text) {
         this.callbacks.onTranscriptDelta?.(text);
       }
+    } else if (type === 'session.commentary.appended') {
+      this.callbacks.onTurnStart?.();
     } else if (type === 'input_audio_buffer.speech_started') {
       this.callbacks.onSpeechStarted?.();
     } else if (type === 'input_audio_buffer.speech_stopped') {
@@ -387,20 +392,9 @@ export class MiniMaxWebRtcClient {
 
   private sendInitialGreeting(): void {
     this.sendEvent({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: '同学推门走进了心理咨询室' }],
-      },
-    });
-
-    this.sendEvent({
-      type: 'response.create',
-      response: {
-        modalities: ['audio', 'text'],
-        instructions: `你必须严格只字面说：“${OPENING_GREETING}”，语气温暖轻快自然，绝对禁止添加任何多余的开场白、其他字句或解释！`,
-      },
+      type: 'session.commentary.append',
+      content: OPENING_GREETING,
+      delegation_id: null,
     });
   }
 
