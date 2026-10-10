@@ -421,3 +421,6 @@ export class CbtStateMachine {
     }
   }
 }
+
+export * from './cbt-capsules';
+

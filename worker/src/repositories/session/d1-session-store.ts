@@ -57,17 +57,20 @@ export async function saveToD1(db: D1Database, record: SessionRecord): Promise<v
   }
 }
 
-export async function findActiveFromD1(
+async function querySessionsByDeletedStatus(
   db: D1Database,
+  isDeleted: 0 | 1,
   limit: number,
+  orderByColumn: 'created_at' | 'deleted_at',
+  actionLabel: string,
 ): Promise<SessionRecord[] | null> {
   try {
     await ensureSchemaOnce(db);
     const { results } = await db
       .prepare(
-        'SELECT * FROM school_sessions WHERE is_deleted = 0 ORDER BY created_at DESC LIMIT ?',
+        `SELECT * FROM school_sessions WHERE is_deleted = ? ORDER BY ${orderByColumn} DESC LIMIT ?`,
       )
-      .bind(limit)
+      .bind(isDeleted, limit)
       .all<SessionRecord>();
     if (results && results.length >= 0) {
       return results.filter(
@@ -75,32 +78,23 @@ export async function findActiveFromD1(
       );
     }
   } catch (e) {
-    console.warn('[SessionRepository findActive error]:', e);
+    console.warn(`[SessionRepository ${actionLabel} error]:`, e);
   }
   return null;
+}
+
+export async function findActiveFromD1(
+  db: D1Database,
+  limit: number,
+): Promise<SessionRecord[] | null> {
+  return querySessionsByDeletedStatus(db, 0, limit, 'created_at', 'findActive');
 }
 
 export async function findArchivedFromD1(
   db: D1Database,
   limit: number,
 ): Promise<SessionRecord[] | null> {
-  try {
-    await ensureSchemaOnce(db);
-    const { results } = await db
-      .prepare(
-        'SELECT * FROM school_sessions WHERE is_deleted = 1 ORDER BY deleted_at DESC LIMIT ?',
-      )
-      .bind(limit)
-      .all<SessionRecord>();
-    if (results && results.length >= 0) {
-      return results.filter(
-        (s) => !s.session_id.startsWith('sess_sample_') && !s.session_id.startsWith('mock_'),
-      );
-    }
-  } catch (e) {
-    console.warn('[SessionRepository findArchived error]:', e);
-  }
-  return null;
+  return querySessionsByDeletedStatus(db, 1, limit, 'deleted_at', 'findArchived');
 }
 
 export async function findBySessionIdFromD1(

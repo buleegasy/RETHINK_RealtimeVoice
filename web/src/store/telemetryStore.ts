@@ -1,5 +1,12 @@
 import { create } from 'zustand';
 
+function generateTelemetryId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+  }
+  return `${prefix}_${Date.now()}`;
+}
+
 export interface ShadowDirectiveLog {
   id: string;
   turnSequence: number;
@@ -132,7 +139,7 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
     set((state) => {
       const newItem: ShadowDirectiveLog = {
         ...directive,
-        id: `shadow_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id: generateTelemetryId('shadow'),
       };
       return {
         latestShadowDirective: newItem,
@@ -147,7 +154,7 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
 
   appendFinalTranscript: (item) =>
     set((state) => {
-      const id = item.id || `ts_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const id = item.id || generateTelemetryId('ts');
       const newItem: LiveTranscriptItem = {
         ...item,
         id,

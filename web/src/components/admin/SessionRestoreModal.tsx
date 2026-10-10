@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { RotateCcw, X, Lock, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { useAdminStore } from '../../store/adminStore';
+import { useModalEscape } from '../../hooks/useModalEscape';
 import type { AdminSessionItem } from '../../types';
 
 interface SessionRestoreModalProps {
@@ -20,18 +21,7 @@ export const SessionRestoreModal: React.FC<SessionRestoreModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  useModalEscape(onClose);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

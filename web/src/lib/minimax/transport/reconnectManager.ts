@@ -1,5 +1,14 @@
 import type { MiniMaxClientCallbacks } from '../types';
 
+function getSecureRandomRatio(): number {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const array = new Uint32Array(1);
+    crypto.getRandomValues(array);
+    return array[0] / 0x100000000;
+  }
+  return 0.5;
+}
+
 export class ReconnectManager {
   private attempts: number = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -44,7 +53,7 @@ export class ReconnectManager {
 
     this.attempts++;
     const baseDelay = Math.min(1000 * Math.pow(1.5, this.attempts - 1), 6000);
-    const jitter = Math.random() * 400;
+    const jitter = getSecureRandomRatio() * 400;
     const delay = Math.round(baseDelay + jitter);
     console.log(
       `[MiniMaxClient] 将在 ${delay}ms 后进行第 ${this.attempts}/${this.maxAttempts} 次重连...`,

@@ -55,6 +55,41 @@ export async function createEphemeralToken(
   }
 }
 
+async function formatNegotiationFailure(
+  res: Response,
+  prefix: string,
+): Promise<{
+  ok: boolean;
+  fallbackToWs: boolean;
+  status: number;
+  error: string;
+}> {
+  const errText = await res.text().catch(() => '');
+  console.error(`[WebRTC Gateway] ${prefix}协商失败 (HTTP ${res.status}):`, errText);
+  return {
+    ok: false,
+    fallbackToWs: false,
+    status: res.status,
+    error: `上游 WebRTC 协商失败 (HTTP ${res.status}): ${errText || res.statusText}`,
+  };
+}
+
+function formatNegotiationException(
+  err: any,
+  prefix: string,
+): {
+  ok: boolean;
+  fallbackToWs: boolean;
+  error: string;
+} {
+  console.error(`[WebRTC Gateway] ${prefix}协商异常:`, err);
+  return {
+    ok: false,
+    fallbackToWs: false,
+    error: `WebRTC 协商异常: ${err?.message || '网络连接异常'}`,
+  };
+}
+
 export async function negotiateWebRtcOffer(
   config: RealtimeGatewayConfig,
   sdpOffer: string,
@@ -139,22 +174,9 @@ export async function negotiateWebRtcOffer(
           };
         }
       }
-
-      const errText = await res.text().catch(() => '');
-      console.error(`[WebRTC Gateway] 上游 Live SDP 协商失败 (HTTP ${res.status}):`, errText);
-      return {
-        ok: false,
-        fallbackToWs: false,
-        status: res.status,
-        error: `上游 WebRTC 协商失败 (HTTP ${res.status}): ${errText || res.statusText}`,
-      };
+      return await formatNegotiationFailure(res, '上游 Live SDP ');
     } catch (err: any) {
-      console.error('[WebRTC Gateway] 上游 Live SDP 协商异常:', err);
-      return {
-        ok: false,
-        fallbackToWs: false,
-        error: `WebRTC 协商异常: ${err?.message || '网络连接异常'}`,
-      };
+      return formatNegotiationException(err, '上游 Live SDP ');
     }
   }
 
@@ -195,20 +217,8 @@ export async function negotiateWebRtcOffer(
       };
     }
 
-    const errText = await res.text().catch(() => '');
-    console.error(`[WebRTC Gateway] 上游 SDP 协商失败 (HTTP ${res.status}):`, errText);
-    return {
-      ok: false,
-      fallbackToWs: false,
-      status: res.status,
-      error: `上游 WebRTC 协商失败 (HTTP ${res.status}): ${errText || res.statusText}`,
-    };
+    return await formatNegotiationFailure(res, '上游 SDP ');
   } catch (err: any) {
-    console.error('[WebRTC Gateway] 上游 SDP 协商异常:', err);
-    return {
-      ok: false,
-      fallbackToWs: false,
-      error: `WebRTC 协商异常: ${err?.message || '网络连接异常'}`,
-    };
+    return formatNegotiationException(err, '上游 SDP ');
   }
 }

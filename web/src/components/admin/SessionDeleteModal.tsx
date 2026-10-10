@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   ShieldAlert,
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { useAdminStore } from '../../store/adminStore';
+import { useModalEscape } from '../../hooks/useModalEscape';
 import type { AdminSessionItem } from '../../types';
 
 interface SessionDeleteModalProps {
@@ -31,18 +32,7 @@ export const SessionDeleteModal: React.FC<SessionDeleteModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  useModalEscape(onClose);
 
   const isConfirmed = confirmKeyword.trim() === '确认归档';
 

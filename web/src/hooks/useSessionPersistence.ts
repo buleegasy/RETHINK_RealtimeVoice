@@ -102,6 +102,34 @@ export function useSessionPersistence() {
             const data: any = await res.json();
             if (data?.report) {
               onReportGenerated?.(data.report);
+              try {
+                if (typeof localStorage !== 'undefined') {
+                  const raw = localStorage.getItem('rethink_real_sessions') || '[]';
+                  const existing = JSON.parse(raw);
+                  if (Array.isArray(existing)) {
+                    const idx = existing.findIndex((s: any) => s.sessionId === sessionId);
+                    const updatedRecord = {
+                      ...(existing[idx] || localSessionRecord),
+                      coreConcerns: data.report.coreConcerns || ['日常交流'],
+                      crisisSummary:
+                        data.report.emotionalTrajectory?.deltaNotes ||
+                        data.report.crisisSummary ||
+                        '',
+                      crisisLevel: data.crisis_level ?? (data.is_crisis ? 3 : 0),
+                      isCrisis: Boolean(data.is_crisis),
+                      deidentifiedReport: data.report,
+                    };
+                    if (idx >= 0) existing[idx] = updatedRecord;
+                    else existing.unshift(updatedRecord);
+                    localStorage.setItem(
+                      'rethink_real_sessions',
+                      JSON.stringify(existing.slice(0, 50)),
+                    );
+                  }
+                }
+              } catch (cacheErr) {
+                console.debug('[SessionPersistence] 更新大模型报告到本地缓存异常:', cacheErr);
+              }
             }
           }
         })

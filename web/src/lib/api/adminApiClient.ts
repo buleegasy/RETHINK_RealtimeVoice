@@ -128,12 +128,31 @@ export class AdminApiClient {
         if (rawLocal) {
           const localList: AdminSessionItem[] = JSON.parse(rawLocal);
           if (Array.isArray(localList)) {
-            for (const loc of localList) {
-              if (
-                !loc.sessionId.startsWith('sess_sample_') &&
-                !loc.sessionId.startsWith('mock_') &&
-                !serverSessions.some((s) => s.sessionId === loc.sessionId)
-              ) {
+            // 清理并剔除包含历史假模板套话的残留记录
+            const sanitizedLocalList = localList.filter((loc) => {
+              if (loc.sessionId.startsWith('sess_sample_') || loc.sessionId.startsWith('mock_')) {
+                return false;
+              }
+              const concerns = Array.isArray(loc.coreConcerns) ? loc.coreConcerns : [];
+              const hasFakeTemplate = concerns.some(
+                (c: string) =>
+                  typeof c === 'string' && (c.includes('展开的真实倾诉') || c.includes('围绕“')),
+              );
+              const summary =
+                loc.crisisSummary ||
+                (loc as any).deidentifiedReport?.emotionalTrajectory?.deltaNotes ||
+                '';
+              const isFakePsychobabble =
+                summary.includes('情绪承压与倾诉表达') && summary.includes('完成初步表达');
+              return !hasFakeTemplate && !isFakePsychobabble;
+            });
+
+            if (sanitizedLocalList.length !== localList.length) {
+              localStorage.setItem('rethink_real_sessions', JSON.stringify(sanitizedLocalList));
+            }
+
+            for (const loc of sanitizedLocalList) {
+              if (!serverSessions.some((s) => s.sessionId === loc.sessionId)) {
                 if (!crisisOnly || loc.isCrisis || loc.crisisLevel >= 3) {
                   serverSessions.push(loc);
                 }
@@ -153,6 +172,9 @@ export class AdminApiClient {
 
   public static async cleanMockData(): Promise<{ success: boolean; purged?: number }> {
     try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('rethink_real_sessions');
+      }
       const res = await apiFetch('/api/admin/clean-mock-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

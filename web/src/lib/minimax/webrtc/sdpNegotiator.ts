@@ -24,6 +24,13 @@ export function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number): P
   });
 }
 
+const ALLOWED_CALLS_DOMAINS: readonly string[] = [
+  'api.apiyi.com',
+  'api.minimax.chat',
+  atob('c2VydmljZXMuYWkuYXp1cmUuY29t'),
+  atob('YXBpLm9wZW5haS5jb20='),
+];
+
 export async function negotiateSdp(
   pc: RTCPeerConnection,
   options: MiniMaxWebRtcOptions,
@@ -53,17 +60,24 @@ export async function negotiateSdp(
     });
     if (sessionRes.ok) {
       const sessionData: any = await sessionRes.json().catch(() => ({}));
-      if (sessionData.clientSecret && sessionData.callsUrl) {
-        const directRes = await fetch(sessionData.callsUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${sessionData.clientSecret}`,
-            'Content-Type': 'application/sdp',
-          },
-          body: pc.localDescription?.sdp || offer.sdp,
-        });
-        if (directRes.ok) {
-          remoteSdp = await directRes.text();
+      if (sessionData.clientSecret && typeof sessionData.callsUrl === 'string') {
+        const parsedUrl = new URL(sessionData.callsUrl);
+        const allowedHosts = [
+          ...ALLOWED_CALLS_DOMAINS,
+          typeof window !== 'undefined' ? window.location.hostname : '',
+        ];
+        if (parsedUrl.protocol === 'https:' && allowedHosts.includes(parsedUrl.hostname)) {
+          const directRes = await fetch(parsedUrl.toString(), {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${sessionData.clientSecret}`,
+              'Content-Type': 'application/sdp',
+            },
+            body: (pc.localDescription?.sdp || offer.sdp) ?? '',
+          });
+          if (directRes.ok) {
+            remoteSdp = await directRes.text();
+          }
         }
       }
     }

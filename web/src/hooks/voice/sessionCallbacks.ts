@@ -261,7 +261,9 @@ export function buildVoiceClientCallbacks(deps: VoiceCallbackDependencies): Mini
       useTelemetryStore.getState().updateTtft(ttftMs);
     },
     onRemoteStream: (stream) => {
-      audioGraph.setupWebRtcRemoteStream(stream);
+      audioGraph.setupWebRtcRemoteStream(stream).catch((err) => {
+        console.error('[SessionCallbacks] 设置远程音频流失败:', err);
+      });
     },
     onTransportChange: (transport) => {
       useTelemetryStore.getState().setActiveTransport(transport);
