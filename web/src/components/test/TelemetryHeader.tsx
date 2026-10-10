@@ -36,6 +36,9 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
   const activeCbtStage = useTelemetryStore((s) => s.activeCbtStage);
   const duplexPhase = useTelemetryStore((s) => s.duplexPhase);
   const clearTelemetry = useTelemetryStore((s) => s.clearTelemetry);
+  const activeTransport = useTelemetryStore((s) => s.activeTransport);
+  const preferredTransport = useTelemetryStore((s) => s.preferredTransport);
+  const setPreferredTransport = useTelemetryStore((s) => s.setPreferredTransport);
 
   const isCallActive = sessionStatus === 'connected' || sessionStatus === 'connecting';
 
@@ -70,6 +73,15 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
               LIVE-1 DIRECT · CBT EMBEDDED
             </span>
             <span
+              className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                activeTransport === 'webrtc'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  : 'bg-slate-800 text-slate-300 border-slate-700'
+              }`}
+            >
+              {activeTransport === 'webrtc' ? 'WEBRTC OPUS' : 'WS PCM16'}
+            </span>
+            <span
               className="hidden lg:inline text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
               title="挂机后由 DeepSeek V4 Flash 异步进行结构化建档与评估"
             >
@@ -80,6 +92,31 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
       </div>
 
       <div className="hidden md:flex items-center gap-4 text-xs font-mono">
+        {/* 链路模式控制 pill */}
+        <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded px-1.5 py-1">
+          <span className="text-[10px] text-slate-400">链路:</span>
+          {(['auto', 'webrtc', 'websocket'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              disabled={isCallActive}
+              onClick={() => setPreferredTransport(t)}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition cursor-pointer ${
+                preferredTransport === t
+                  ? t === 'webrtc'
+                    ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold'
+                    : t === 'auto'
+                      ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-bold'
+                      : 'bg-purple-500/30 text-purple-300 border border-purple-500/40 font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              } ${isCallActive ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={isCallActive ? '通话中锁定当前通道' : `切换语音链路策略至 ${t}`}
+            >
+              {t === 'auto' ? '自适应' : t === 'webrtc' ? 'WebRTC' : 'WS'}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800">
           <span
             className={`w-2 h-2 rounded-full ${
@@ -92,7 +129,7 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
           />
           <span className="text-slate-300">
             {isConnected
-              ? '全双工网关已连接'
+              ? `${activeTransport === 'webrtc' ? 'WebRTC 全双工通道' : 'WebSocket 全双工网关'}已连接`
               : sessionStatus === 'connecting'
                 ? '正在协商链路...'
                 : '网关就绪 (待机)'}

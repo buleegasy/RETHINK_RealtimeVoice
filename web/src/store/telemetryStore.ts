@@ -66,6 +66,7 @@ export interface TelemetryState {
   duplexPhase: string;
   isConnected: boolean;
   activeTransport: 'webrtc' | 'websocket';
+  preferredTransport: 'auto' | 'webrtc' | 'websocket';
 
   // Actions
   addShadowDirective: (directive: Omit<ShadowDirectiveLog, 'id'>) => void;
@@ -83,6 +84,7 @@ export interface TelemetryState {
   setDuplexPhase: (phase: string) => void;
   setIsConnected: (connected: boolean) => void;
   setActiveTransport: (transport: 'webrtc' | 'websocket') => void;
+  setPreferredTransport: (transport: 'auto' | 'webrtc' | 'websocket') => void;
   clearTelemetry: () => void;
 }
 
@@ -122,6 +124,7 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
   duplexPhase: 'idle',
   isConnected: false,
   activeTransport: 'webrtc',
+  preferredTransport: 'auto',
 
   addShadowDirective: (directive) =>
     set((state) => {
@@ -184,6 +187,7 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
   setDuplexPhase: (phase) => set({ duplexPhase: phase }),
   setIsConnected: (connected) => set({ isConnected: connected }),
   setActiveTransport: (activeTransport) => set({ activeTransport }),
+  setPreferredTransport: (preferredTransport) => set({ preferredTransport }),
 
   clearTelemetry: () =>
     set({

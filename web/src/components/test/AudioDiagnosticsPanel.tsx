@@ -80,15 +80,21 @@ export const AudioDiagnosticsPanel: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-2 text-xs font-mono">
             <div className="p-2.5 rounded bg-slate-950/60 border border-slate-800">
-              <div className="text-[10px] text-slate-400">排队 PCM 分片</div>
+              <div className="text-[10px] text-slate-400">
+                {activeTransport === 'webrtc' ? '传输通道' : '排队 PCM 分片'}
+              </div>
               <div className="text-base font-bold text-slate-200 mt-0.5">
-                {jitter.queuedBuffers} 块
+                {activeTransport === 'webrtc' ? 'UDP / SRTP' : `${jitter.queuedBuffers} 块`}
               </div>
             </div>
             <div className="p-2.5 rounded bg-slate-950/60 border border-slate-800">
-              <div className="text-[10px] text-slate-400">AudioContext 在播源</div>
+              <div className="text-[10px] text-slate-400">
+                {activeTransport === 'webrtc' ? '音频渲染器' : 'AudioContext 在播源'}
+              </div>
               <div className="text-base font-bold text-slate-200 mt-0.5">
-                {jitter.scheduledCount} 轨
+                {activeTransport === 'webrtc'
+                  ? 'HTMLAudio 硬件直通'
+                  : `${jitter.scheduledCount} 轨`}
               </div>
             </div>
             <div className="p-2.5 rounded bg-slate-950/60 border border-slate-800">
@@ -116,7 +122,9 @@ export const AudioDiagnosticsPanel: React.FC = () => {
               I/O 实时电平监视器 (RMS VU Meters)
             </h3>
           </div>
-          <span className="text-[10px] font-mono text-slate-400">24kHz 16bit PCM</span>
+          <span className="text-[10px] font-mono text-slate-400">
+            {activeTransport === 'webrtc' ? 'WebRTC Opus 48kHz (硬件AEC)' : '24kHz 16bit PCM'}
+          </span>
         </div>
 
         <div className="mt-4 space-y-3 font-mono text-xs">
@@ -167,6 +175,8 @@ export const AudioDiagnosticsPanel: React.FC = () => {
                 architecture: 'Live-1 Direct + 16 CBT Capsules (TTFT < 500ms)',
                 engine: 'DeepSeek V4 Flash',
                 postSessionEvaluator: 'DeepSeek V4 Flash',
+                transport: activeTransport,
+                rtcDataChannel: activeTransport === 'webrtc' ? 'minimax-events' : null,
                 gatewayRttMs: rttMs,
                 avgRttMs,
                 ttftMs,

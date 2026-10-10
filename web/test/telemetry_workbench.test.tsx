@@ -148,4 +148,32 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
     fireEvent.click(endCallBtn);
     expect(mockEndCall).toHaveBeenCalled();
   });
+
+  it('链路选择器应允许在待机时切换 preferredTransport，且正确展示 WebRTC / WS 状态徽标', () => {
+    const { unmount } = render(<TestWorkbench />);
+
+    // 默认 activeTransport 为 webrtc
+    expect(screen.getByText('WEBRTC OPUS')).toBeInTheDocument();
+    expect(screen.getByText('RTCDataChannel 直通')).toBeInTheDocument();
+    expect(screen.getByText('WebRTC Opus 48kHz (硬件AEC)')).toBeInTheDocument();
+
+    // 点击切换为 WebSocket
+    const wsBtn = screen.getByText('WS');
+    fireEvent.click(wsBtn);
+    expect(useTelemetryStore.getState().preferredTransport).toBe('websocket');
+
+    // 卸载当前 DOM
+    unmount();
+
+    // 模拟活跃通道切为 websocket 并连接成功
+    useTelemetryStore.getState().setActiveTransport('websocket');
+    useTelemetryStore.getState().setIsConnected(true);
+
+    // 重新渲染验证界面徽标响应
+    render(<TestWorkbench />);
+    expect(screen.getByText('WS PCM16')).toBeInTheDocument();
+    expect(screen.getByText('WebSocket 帧传输')).toBeInTheDocument();
+    expect(screen.getByText('24kHz 16bit PCM')).toBeInTheDocument();
+    expect(screen.getByText('WebSocket 全双工网关已连接')).toBeInTheDocument();
+  });
 });

@@ -6,6 +6,7 @@ export const LiveTranscriptPanel: React.FC = () => {
   const streamingUserText = useTelemetryStore((s) => s.streamingUserText);
   const streamingAssistantText = useTelemetryStore((s) => s.streamingAssistantText);
   const transcriptFeed = useTelemetryStore((s) => s.transcriptFeed);
+  const activeTransport = useTelemetryStore((s) => s.activeTransport);
 
   return (
     <div className="flex-1 min-h-0 bg-slate-900/80 border border-slate-800 rounded-lg flex flex-col overflow-hidden shadow-xl">
@@ -16,9 +17,20 @@ export const LiveTranscriptPanel: React.FC = () => {
             语音转写双轨实时流 (Live Dual-Track Transcripts)
           </h2>
         </div>
-        <span className="text-xs text-slate-400 font-mono">
-          已沉淀轮次: {transcriptFeed.length}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+              activeTransport === 'webrtc'
+                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
+                : 'bg-purple-950/60 text-purple-300 border-purple-500/40'
+            }`}
+          >
+            {activeTransport === 'webrtc' ? 'RTCDataChannel 直通' : 'WebSocket 帧传输'}
+          </span>
+          <span className="text-xs text-slate-400 font-mono">
+            已沉淀轮次: {transcriptFeed.length}
+          </span>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-3">
