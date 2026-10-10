@@ -143,7 +143,9 @@ export class RealtimeGatewayAdapter {
           return { ok: true, clientSecret, callsUrl };
         }
       }
-      return { ok: false, error: `Upstream returned status ${res.status}` };
+      const errText = await res.text().catch(() => '');
+      console.error(`[WebRTC Gateway] 获取临时会话密钥失败 (HTTP ${res.status}):`, errText);
+      return { ok: false, error: `Upstream returned status ${res.status}: ${errText}` };
     } catch (err: any) {
       return { ok: false, error: err?.message || 'Network error' };
     }
@@ -429,10 +431,23 @@ export class RealtimeGatewayAdapter {
   ): Record<string, unknown> {
     const upstreamPayload = { ...cleanSession };
     delete upstreamPayload.type;
+
+    // Azure OpenAI strict schema forbids `model` inside the session body
+    delete upstreamPayload.model;
+
     const isMiniMax = upstreamModel?.toLowerCase().includes('minimax');
     if (isMiniMax) {
       delete upstreamPayload.turn_detection;
       delete upstreamPayload.input_audio_transcription;
+    } else {
+      // Azure / OpenAI strict schema compliance
+      delete upstreamPayload.audio;
+      delete upstreamPayload.max_output_tokens;
+
+      if (upstreamPayload.turn_detection && typeof upstreamPayload.turn_detection === 'object') {
+        const td = upstreamPayload.turn_detection as Record<string, unknown>;
+        delete td.interrupt_response;
+      }
     }
     return upstreamPayload;
   }
