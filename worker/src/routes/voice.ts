@@ -37,6 +37,58 @@ function getSafeExecutionCtx(c: any): ExecutionContext | undefined {
   }
 }
 
+// 0. WebRTC SDP Offer 协商端点
+voiceRouter.post('/webrtc/offer', async (c) => {
+  const user = await extractAndVerifyUser(c);
+  const isProduction = c.env?.ENVIRONMENT === 'production';
+  if (isProduction && !user) {
+    return c.json(
+      { ok: false, error: 'Unauthorized: Missing or invalid authentication token' },
+      401,
+    );
+  }
+
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  const result = await VoiceService.handleWebRtcOffer(
+    c.env || {},
+    {
+      ...body,
+      userId: user?.uid || body.userId,
+      username: user?.displayName || user?.username || body.username,
+    },
+    getSafeExecutionCtx(c),
+  );
+
+  return c.json(result);
+});
+
+// WebRTC Session 会话凭证端点
+voiceRouter.post('/webrtc/session', async (c) => {
+  const user = await extractAndVerifyUser(c);
+  const isProduction = c.env?.ENVIRONMENT === 'production';
+  if (isProduction && !user) {
+    return c.json(
+      { ok: false, error: 'Unauthorized: Missing or invalid authentication token' },
+      401,
+    );
+  }
+
+  return c.json({
+    ok: true,
+    transport: 'webrtc',
+    sessionConfig: {
+      model: 'minimax-realtime',
+      voice: 'maple',
+    },
+  });
+});
+
 // 1. 全双工实时语音 WebSocket 接入端点
 voiceRouter.get('/ws', async (c) => {
   const upgradeHeader = c.req.header('Upgrade');

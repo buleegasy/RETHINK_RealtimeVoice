@@ -342,6 +342,12 @@ export function useVoiceSession() {
           onTTFT: (ttftMs) => {
             useTelemetryStore.getState().updateTtft(ttftMs);
           },
+          onRemoteStream: (stream) => {
+            audioGraph.setupWebRtcRemoteStream(stream);
+          },
+          onTransportChange: (transport) => {
+            useTelemetryStore.getState().setActiveTransport(transport);
+          },
         },
       });
 
@@ -351,7 +357,8 @@ export function useVoiceSession() {
         }
       });
 
-      clientRef.current.connect();
+      const micStream = audioGraph.getMicrophoneStream();
+      clientRef.current.connect(micStream || undefined);
       startVisualizer();
 
       setCallDuration(0);

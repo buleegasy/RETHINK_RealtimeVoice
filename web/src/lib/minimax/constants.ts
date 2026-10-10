@@ -17,6 +17,13 @@ export const AUDIO_CONSTRAINTS: MediaStreamConstraints = {
   video: false,
 };
 
+export const DEFAULT_RTC_ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+export const WEBRTC_DATA_CHANNEL_NAME = 'minimax-events';
+
 export const CBT_VOICE_TOOLS = [
   {
     type: 'function',

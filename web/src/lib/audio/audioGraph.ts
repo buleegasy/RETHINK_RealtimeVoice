@@ -19,6 +19,8 @@ export class AudioGraphService {
   private compressorNode: DynamicsCompressorNode | null = null;
   private inputGainNode: GainNode | null = null;
   private highpassFilterNode: BiquadFilterNode | null = null;
+  private remoteMediaStreamSource: MediaStreamAudioSourceNode | null = null;
+  private audioElement: HTMLAudioElement | null = null;
 
   private isMuted: boolean = false;
   private isAiThinking: boolean = false;
@@ -107,6 +109,41 @@ export class AudioGraphService {
     this.isAiThinking = thinking;
     if (thinking) {
       this.bargeInDetector.reset();
+    }
+  }
+
+  public getMicrophoneStream(): MediaStream | null {
+    return this.mediaStream;
+  }
+
+  public async setupWebRtcRemoteStream(stream: MediaStream): Promise<void> {
+    const ctx = await this.initAudioContext();
+    const outputGain = this.ensureOutputGraph(ctx);
+
+    try {
+      if (this.remoteMediaStreamSource) {
+        try {
+          this.remoteMediaStreamSource.disconnect();
+        } catch {}
+        this.remoteMediaStreamSource = null;
+      }
+      this.remoteMediaStreamSource = ctx.createMediaStreamSource(stream);
+      this.remoteMediaStreamSource.connect(outputGain);
+    } catch (e) {
+      console.warn('[AudioGraph] Web Audio 媒体流路由警告:', e);
+    }
+
+    if (typeof document !== 'undefined') {
+      try {
+        if (!this.audioElement) {
+          this.audioElement = new Audio();
+          this.audioElement.autoplay = true;
+          // @ts-expect-error playsInline
+          this.audioElement.playsInline = true;
+        }
+        this.audioElement.srcObject = stream;
+        await this.audioElement.play().catch(() => {});
+      } catch {}
     }
   }
 
@@ -442,6 +479,19 @@ export class AudioGraphService {
   public cleanup(): void {
     this.stopPlayback(0);
     this.stopRecording();
+    if (this.remoteMediaStreamSource) {
+      try {
+        this.remoteMediaStreamSource.disconnect();
+      } catch {}
+      this.remoteMediaStreamSource = null;
+    }
+    if (this.audioElement) {
+      try {
+        this.audioElement.pause();
+        this.audioElement.srcObject = null;
+      } catch {}
+      this.audioElement = null;
+    }
     if (
       this.boundDeviceChangeListener &&
       typeof navigator !== 'undefined' &&

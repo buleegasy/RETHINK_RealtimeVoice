@@ -81,4 +81,6 @@ export interface MiniMaxClientCallbacks {
   onReconnecting?: (attempt: number, maxAttempts: number, delayMs: number) => void;
   onReconnected?: () => void;
   onMaxReconnectFailed?: () => void;
+  onRemoteStream?: (stream: MediaStream) => void;
+  onTransportChange?: (transport: 'webrtc' | 'websocket') => void;
 }

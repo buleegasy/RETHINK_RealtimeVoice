@@ -7,6 +7,7 @@ import {
 } from './constants';
 import type { MiniMaxClientCallbacks, MiniMaxSessionConfig, MiniMaxServerEvent } from './types';
 import { getWsUrl } from '../api';
+import { MiniMaxWebRtcClient } from './webrtcClient';
 
 export interface MiniMaxClientOptions {
   relayUrl?: string;
@@ -18,6 +19,9 @@ export interface MiniMaxClientOptions {
   username?: string;
   sessionId?: string;
   token?: string;
+  transport?: 'webrtc' | 'websocket' | 'auto';
+  offerEndpoint?: string;
+  iceServers?: RTCIceServer[];
 }
 
 function validateWebSocketUrl(rawUrl: string): string {
@@ -37,6 +41,8 @@ export class MiniMaxRealtimeClient {
   private readonly callbacks: MiniMaxClientCallbacks;
   private isConnected: boolean = false;
   private isExplicitlyClosed: boolean = false;
+  private activeTransport: 'webrtc' | 'websocket' = 'websocket';
+  private webrtcClient: MiniMaxWebRtcClient | null = null;
   private reconnectAttempts: number = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
@@ -55,24 +61,97 @@ export class MiniMaxRealtimeClient {
   }
 
   public get ready(): boolean {
+    if (this.activeTransport === 'webrtc') {
+      return (this.webrtcClient?.ready ?? false) && this.isConnected;
+    }
     return this.isConnected && this.ws?.readyState === WebSocket.OPEN;
   }
 
+  public getTransportType(): 'webrtc' | 'websocket' {
+    return this.activeTransport;
+  }
+
+  public getRemoteStream(): MediaStream | null {
+    return this.webrtcClient?.getRemoteStream() || null;
+  }
+
   public getCurrentResponseItemId(): string | null {
+    if (this.activeTransport === 'webrtc' && this.webrtcClient) {
+      return this.webrtcClient.getCurrentResponseItemId();
+    }
     return this.currentResponseItemId;
   }
 
   public getPlaybackEpoch(): number {
+    if (this.activeTransport === 'webrtc' && this.webrtcClient) {
+      return this.webrtcClient.getPlaybackEpoch();
+    }
     return this.playbackEpoch;
   }
 
   public getCanceledResponseItemIds(): ReadonlySet<string> {
+    if (this.activeTransport === 'webrtc' && this.webrtcClient) {
+      return this.webrtcClient.getCanceledResponseItemIds();
+    }
     return this.canceledResponseItemIds;
   }
 
-  public connect(): void {
+  public async connect(localStream?: MediaStream): Promise<void> {
     this.isExplicitlyClosed = false;
     this.currentTurnDetectionMode = null;
+    const mode = this.options.transport || 'auto';
+
+    if (mode === 'webrtc' || mode === 'auto') {
+      try {
+        const rtc = new MiniMaxWebRtcClient({
+          sessionId: this.options.sessionId,
+          userId: this.options.userId,
+          username: this.options.username,
+          token: this.options.token,
+          voice: this.options.sessionConfig?.voice,
+          sessionConfig: this.options.sessionConfig,
+          offerEndpoint: this.options.offerEndpoint,
+          iceServers: this.options.iceServers,
+          sendGreetingOnConnect: this.options.sendGreetingOnConnect,
+          callbacks: {
+            ...this.callbacks,
+            onOpen: () => {
+              this.activeTransport = 'webrtc';
+              this.isConnected = true;
+              this.callbacks.onTransportChange?.('webrtc');
+              this.callbacks.onOpen?.();
+            },
+            onClose: (code, reason) => {
+              this.isConnected = false;
+              this.callbacks.onClose?.(code, reason);
+            },
+          },
+        });
+
+        const success = await rtc.connect(localStream);
+        if (success) {
+          this.webrtcClient = rtc;
+          this.activeTransport = 'webrtc';
+          this.isConnected = true;
+          this.callbacks.onTransportChange?.('webrtc');
+          return;
+        }
+      } catch (err) {
+        console.warn('[MiniMaxClient] WebRTC 初始化异常，降级至 WebSocket:', err);
+      }
+
+      if (mode === 'webrtc') {
+        this.callbacks.onError?.(new Error('WebRTC connection failed'));
+        return;
+      }
+    }
+
+    this.connectWebSocket();
+  }
+
+  public connectWebSocket(): void {
+    this.activeTransport = 'websocket';
+    this.callbacks.onTransportChange?.('websocket');
     this.cleanupSocket();
 
     const wsUrl =
@@ -211,6 +290,10 @@ export class MiniMaxRealtimeClient {
   }
 
   public updateTurnDetection(mode: 'speaking' | 'listening'): void {
+    if (this.activeTransport === 'webrtc' && this.webrtcClient) {
+      this.webrtcClient.updateTurnDetection(mode);
+      return;
+    }
     if (!this.ready || this.currentTurnDetectionMode === mode) return;
     this.currentTurnDetectionMode = mode;
     const vadConfig =
@@ -245,6 +328,9 @@ export class MiniMaxRealtimeClient {
 
   public sendAudioChunk(pcm16Base64: string): void {
     if (!pcm16Base64) return;
+    if (this.activeTransport === 'webrtc') {
+      return;
+    }
     this.send({
       type: 'input_audio_buffer.append',
       audio: pcm16Base64,
@@ -268,6 +354,10 @@ export class MiniMaxRealtimeClient {
   }
 
   public interrupt(options?: { itemId?: string; audioEndMs?: number }): void {
+    if (this.activeTransport === 'webrtc' && this.webrtcClient) {
+      this.webrtcClient.interrupt(options);
+      return;
+    }
     this.playbackEpoch++;
     if (this.currentToolCallItemId) {
       this.send({
@@ -309,6 +399,10 @@ export class MiniMaxRealtimeClient {
   }
 
   public send(payload: Record<string, unknown>): void {
+    if (this.activeTransport === 'webrtc' && this.webrtcClient?.ready) {
+      this.webrtcClient.sendEvent(payload);
+      return;
+    }
     if (this.ready && this.ws) {
       try {
         this.ws.send(JSON.stringify(payload));
@@ -327,6 +421,10 @@ export class MiniMaxRealtimeClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.webrtcClient) {
+      this.webrtcClient.disconnect();
+      this.webrtcClient = null;
     }
     this.cleanupSocket();
     this.isConnected = false;

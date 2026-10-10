@@ -18,6 +18,7 @@ export const AudioDiagnosticsPanel: React.FC = () => {
     activeCbtStage,
     duplexPhase,
     isConnected,
+    activeTransport,
   } = useTelemetryStore();
 
   return (
@@ -28,11 +29,17 @@ export const AudioDiagnosticsPanel: React.FC = () => {
           <div className="flex items-center gap-2">
             <Sliders className="w-4 h-4 text-emerald-400" />
             <h3 className="text-sm font-semibold text-slate-200">
-              音频抖动缓冲与流式调度 (Jitter Buffer)
+              音频传输与抖动调度 (Jitter Buffer)
             </h3>
           </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-            Web Audio API
+          <span
+            className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+              activeTransport === 'webrtc'
+                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
+                : 'bg-slate-800 text-slate-300 border-slate-700'
+            }`}
+          >
+            {activeTransport === 'webrtc' ? 'WebRTC (UDP/Opus)' : 'WebSocket (TCP/PCM16)'}
           </span>
         </div>
 

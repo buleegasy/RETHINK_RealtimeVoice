@@ -9,6 +9,7 @@ import { generateMiniMaxChatReply, synthesizeRealtimeAudio } from '../lib/minima
 import { isL1Crisis } from '../lib/safety-filter';
 import { CbtStateMachine, type CBTStage } from '../lib/cbt-fsm';
 import { getSituationalMemory } from '../lib/memory-store';
+import { RealtimeGatewayAdapter } from '../adapters/realtime-gateway-adapter';
 import { RelaySessionCoordinator, type RelayQueryParams } from './voice/relay-session-coordinator';
 import { SessionReporter } from './voice/session-reporter';
 import { sendCrisisWebhook } from '../lib/webhook-sender';
@@ -16,6 +17,35 @@ import { sendCrisisWebhook } from '../lib/webhook-sender';
 export { BargeInCoordinator } from './voice/barge-in-coordinator';
 
 export class VoiceService {
+  /**
+   * 处理 WebRTC SDP Offer 协商与自适应降级
+   */
+  public static async handleWebRtcOffer(
+    env: Env,
+    payload: {
+      sdp?: string;
+      sessionId?: string;
+      userId?: string;
+      username?: string;
+      model?: string;
+    },
+    _ctx?: ExecutionContext,
+  ): Promise<{
+    ok: boolean;
+    sdp?: string;
+    fallbackToWs?: boolean;
+    wsUrl?: string;
+    error?: string;
+  }> {
+    const sdp = (payload.sdp || '').trim();
+    if (!sdp) {
+      return { ok: false, error: 'Missing SDP offer' };
+    }
+
+    const config = RealtimeGatewayAdapter.resolveGatewayConfig(env, payload.model);
+    return RealtimeGatewayAdapter.negotiateWebRtcOffer(config, sdp);
+  }
+
   /**
    * 处理全双工 WebSocket 实时语音流转与智能体影子大脑接入
    */

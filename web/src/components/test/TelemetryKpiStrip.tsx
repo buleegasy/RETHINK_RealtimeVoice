@@ -15,6 +15,7 @@ export const TelemetryKpiStrip: React.FC = () => {
     inputAudioLevel,
     outputAudioLevel,
     latestSafetyCheck,
+    activeTransport,
   } = useTelemetryStore();
 
   const getRttStatusColor = (ms: number) => {
@@ -26,11 +27,22 @@ export const TelemetryKpiStrip: React.FC = () => {
 
   return (
     <section className="bg-[#0D1220] border-b border-slate-800/80 px-4 py-2.5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 shrink-0">
-      {/* 1. WebSocket RTT */}
+      {/* 1. RTT & Transport */}
       <div className="bg-slate-900/60 border border-slate-800 rounded p-2.5 flex flex-col justify-between">
         <div className="flex items-center justify-between text-[11px] text-slate-400">
           <span>网关往返时延 (RTT)</span>
-          <Radio className="w-3 h-3 text-cyan-400" />
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`text-[9px] font-mono px-1 py-0.2 rounded border ${
+                activeTransport === 'webrtc'
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                  : 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300'
+              }`}
+            >
+              {activeTransport === 'webrtc' ? 'WebRTC' : 'WS'}
+            </span>
+            <Radio className="w-3 h-3 text-cyan-400" />
+          </div>
         </div>
         <div className="mt-1 flex items-baseline gap-2">
           <span className="text-xl font-bold font-mono text-slate-100">

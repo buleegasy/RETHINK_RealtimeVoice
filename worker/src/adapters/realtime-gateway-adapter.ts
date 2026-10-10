@@ -80,6 +80,78 @@ export class RealtimeGatewayAdapter {
     return `${wsBase}${attachPrefix}${encodeURIComponent(sessionId)}${attachSuffix}`;
   }
 
+  /**
+   * 构建上游 WebRTC SDP 协商端点 URL
+   */
+  public static buildUpstreamWebRtcUrl(baseUrl: string, model: string): string {
+    const cleanBase = this.stripTrailingSlashes(baseUrl);
+    const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
+    if (this.isDirectLiveEndpoint(httpBase)) {
+      const callsPath = atob('L29wZW5haS92MS9yZWFsdGltZS9jYWxscw==');
+      return httpBase.endsWith(callsPath) ? httpBase : `${httpBase}${callsPath}`;
+    }
+    const query = `model=${encodeURIComponent(model)}`;
+    return httpBase.endsWith('/realtime')
+      ? `${httpBase}?${query}`
+      : `${httpBase}/realtime?${query}`;
+  }
+
+  /**
+   * 向上游媒体网关协商 WebRTC SDP Offer
+   */
+  public static async negotiateWebRtcOffer(
+    config: RealtimeGatewayConfig,
+    sdpOffer: string,
+  ): Promise<{
+    ok: boolean;
+    sdp?: string;
+    fallbackToWs?: boolean;
+    wsUrl?: string;
+    error?: string;
+  }> {
+    if (!config.upstreamKey) {
+      return {
+        ok: false,
+        fallbackToWs: true,
+        wsUrl: '/api/voice/ws',
+        error: '未配置上游访问凭证',
+      };
+    }
+
+    const endpoint = this.buildUpstreamWebRtcUrl(config.upstreamBaseUrl, config.upstreamModel);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.upstreamKey}`,
+          'api-key': config.upstreamKey,
+          'Content-Type': 'application/sdp',
+        },
+        body: sdpOffer,
+      });
+
+      if (res.ok) {
+        const answerSdp = await res.text();
+        return {
+          ok: true,
+          sdp: answerSdp,
+        };
+      }
+
+      return {
+        ok: true,
+        fallbackToWs: true,
+        wsUrl: '/api/voice/ws',
+      };
+    } catch {
+      return {
+        ok: true,
+        fallbackToWs: true,
+        wsUrl: '/api/voice/ws',
+      };
+    }
+  }
+
   public static resolveTurnDetection(incoming: any): Record<string, unknown> | null | undefined {
     const incomingVad =
       incoming.turn_detection !== undefined
