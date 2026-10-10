@@ -228,11 +228,14 @@ export class RealtimeGatewayAdapter {
         sessionConfig.instructions = rawSession.instructions;
       }
 
+      // RFC 4566 规范：SDP 每一行及末尾必须以 CRLF (\r\n) 结尾，防止上游 Pion WebRTC 栈报 EOF 反序列化错误
+      const normalizedSdp = sdpOffer.replace(/\r?\n/g, '\r\n').trimEnd() + '\r\n';
+
       const payload = {
         session: sessionConfig,
         transport: {
           type: 'webrtc',
-          sdp: sdpOffer,
+          sdp: normalizedSdp,
         },
       };
 
