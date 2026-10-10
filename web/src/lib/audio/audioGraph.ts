@@ -16,6 +16,7 @@ export class AudioGraphService {
   private analyserNode: AnalyserNode | null = null;
   private speakerAnalyserNode: AnalyserNode | null = null;
   private outputGainNode: GainNode | null = null;
+  private speakerSilentSinkNode: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
   private inputGainNode: GainNode | null = null;
   private highpassFilterNode: BiquadFilterNode | null = null;
@@ -116,7 +117,7 @@ export class AudioGraphService {
 
   public async setupWebRtcRemoteStream(stream: MediaStream): Promise<void> {
     const ctx = await this.initAudioContext();
-    const outputGain = this.ensureOutputGraph(ctx);
+    this.ensureOutputGraph(ctx);
 
     try {
       if (this.remoteMediaStreamSource) {
@@ -126,7 +127,11 @@ export class AudioGraphService {
         this.remoteMediaStreamSource = null;
       }
       this.remoteMediaStreamSource = ctx.createMediaStreamSource(stream);
-      this.remoteMediaStreamSource.connect(outputGain);
+      // 仅将远端音频轨接入 speakerAnalyserNode 用于电平监控与打断检测，绝不连接到 outputGainNode 或 ctx.destination！
+      // 声音由下方的 HTMLAudioElement 硬件直通播放，杜绝双重播放与混响！
+      if (this.speakerAnalyserNode) {
+        this.remoteMediaStreamSource.connect(this.speakerAnalyserNode);
+      }
     } catch (e) {
       console.warn('[AudioGraph] Web Audio 媒体流路由警告:', e);
     }
@@ -295,8 +300,14 @@ export class AudioGraphService {
       this.speakerAnalyserNode.smoothingTimeConstant = 0.3;
 
       this.outputGainNode.connect(this.compressorNode);
+      this.compressorNode.connect(ctx.destination);
       this.compressorNode.connect(this.speakerAnalyserNode);
-      this.speakerAnalyserNode.connect(ctx.destination);
+
+      // 旁路静音汇流节点：保持增益为 0 并接入 destination，使浏览器底层持续调度计算 speakerAnalyserNode，但严禁从 WebAudio destination 二次出声
+      this.speakerSilentSinkNode = ctx.createGain();
+      this.speakerSilentSinkNode.gain.setValueAtTime(0, ctx.currentTime);
+      this.speakerAnalyserNode.connect(this.speakerSilentSinkNode);
+      this.speakerSilentSinkNode.connect(ctx.destination);
     }
     return this.outputGainNode;
   }
@@ -503,6 +514,12 @@ export class AudioGraphService {
         this.speakerAnalyserNode.disconnect();
       } catch {}
       this.speakerAnalyserNode = null;
+    }
+    if (this.speakerSilentSinkNode) {
+      try {
+        this.speakerSilentSinkNode.disconnect();
+      } catch {}
+      this.speakerSilentSinkNode = null;
     }
     if (this.compressorNode) {
       try {

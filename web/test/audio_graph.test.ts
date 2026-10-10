@@ -217,4 +217,27 @@ describe('AudioGraphService 打断音量渐弱与状态管理验证', () => {
     service.updateNetworkQuality(260);
     expect(service.getJitterMetrics().targetSec).toBe(0.1);
   });
+
+  it('setupWebRtcRemoteStream 应仅将 remoteMediaStreamSource 接入 speakerAnalyserNode，严禁连入 outputGainNode 造成双重出声与混响', async () => {
+    const ctx = await service.initAudioContext();
+    const mockSourceNode = {
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    (ctx as any).createMediaStreamSource = vi.fn().mockReturnValue(mockSourceNode);
+
+    const mockStream = {
+      getTracks: () => [{ stop: vi.fn() }],
+    } as unknown as MediaStream;
+
+    await service.setupWebRtcRemoteStream(mockStream);
+
+    const outputGain = (service as any).outputGainNode;
+    const speakerAnalyser = (service as any).speakerAnalyserNode;
+
+    // 核心断言：必须连接 speakerAnalyserNode 供 RMS / 插话检测读取
+    expect(mockSourceNode.connect).toHaveBeenCalledWith(speakerAnalyser);
+    // 核心断言：严禁连接 outputGainNode，避免经过 compressorNode 重复输出到 destination 形成混响
+    expect(mockSourceNode.connect).not.toHaveBeenCalledWith(outputGain);
+  });
 });
