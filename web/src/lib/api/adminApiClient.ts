@@ -68,7 +68,13 @@ export class AdminApiClient {
           const localList: AdminSessionItem[] = JSON.parse(rawLocal);
           if (Array.isArray(localList)) {
             for (const loc of localList) {
+              const concerns = Array.isArray(loc.coreConcerns) ? loc.coreConcerns : [];
+              const hasFakeTemplate = concerns.some(
+                (c: string) =>
+                  typeof c === 'string' && (c.includes('展开的真实倾诉') || c.includes('围绕“')),
+              );
               if (
+                !hasFakeTemplate &&
                 (loc.isCrisis || loc.crisisLevel >= 3) &&
                 !loc.sessionId.startsWith('sess_sample_') &&
                 !loc.sessionId.startsWith('mock_') &&
