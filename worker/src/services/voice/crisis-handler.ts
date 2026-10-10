@@ -1,4 +1,5 @@
 import { sendCrisisWebhook } from '../../lib/webhook-sender';
+import { isWsOpen } from '../../lib/ws-constants';
 
 /**
  * 实时会话危机干预处理器 (CrisisHandler)
@@ -40,13 +41,13 @@ export class CrisisHandler {
   }
 
   private cancelUpstream(): void {
-    if (this.upstreamWs.readyState === WebSocket.OPEN) {
+    if (isWsOpen(this.upstreamWs)) {
       this.upstreamWs.send(JSON.stringify({ type: 'response.cancel' }));
     }
   }
 
   private notifyClient(tier: 'L1' | 'L2'): void {
-    if (this.serverWs.readyState === WebSocket.OPEN) {
+    if (isWsOpen(this.serverWs)) {
       this.serverWs.send(
         JSON.stringify({
           type: 'rethink.crisis_intercepted',

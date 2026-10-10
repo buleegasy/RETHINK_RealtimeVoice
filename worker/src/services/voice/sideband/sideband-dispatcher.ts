@@ -1,4 +1,5 @@
 import { checkL2FlashSafety } from '../../../lib/safety-filter';
+import { isWsOpen } from '../../../lib/ws-constants';
 import type { SidebandAgentConfig } from '../sideband-agent';
 
 export class SidebandDispatcher {
@@ -14,7 +15,7 @@ export class SidebandDispatcher {
       signal: AbortSignal.timeout(5000),
     })
       .then((isCrisis) => {
-        if (serverWs.readyState === WebSocket.OPEN) {
+        if (isWsOpen(serverWs)) {
           serverWs.send(
             JSON.stringify({
               type: 'rethink.telemetry.safety_check',
@@ -61,7 +62,7 @@ export class SidebandDispatcher {
 
       if (signal.aborted || !coordinator.isValid(seq)) return;
 
-      if (serverWs.readyState === WebSocket.OPEN) {
+      if (isWsOpen(serverWs)) {
         serverWs.send(
           JSON.stringify({
             type: 'rethink.telemetry.shadow_directive',
@@ -89,7 +90,7 @@ export class SidebandDispatcher {
     const { upstreamWs, isDirectLive } = this.config;
     const trimmed = hint.trim();
 
-    if (attachWs && attachWs.readyState === WebSocket.OPEN) {
+    if (isWsOpen(attachWs)) {
       try {
         attachWs.send(
           JSON.stringify({
@@ -101,7 +102,7 @@ export class SidebandDispatcher {
       } catch {}
     }
 
-    if (upstreamWs.readyState !== WebSocket.OPEN) return;
+    if (!isWsOpen(upstreamWs)) return;
 
     if (isDirectLive) {
       if (activeDelegationId) {

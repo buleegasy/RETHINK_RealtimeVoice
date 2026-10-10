@@ -1,5 +1,6 @@
 import { CbtStateMachine } from '../../lib/cbt-fsm';
 import { isL1Crisis } from '../../lib/safety-filter';
+import { isWsOpen } from '../../lib/ws-constants';
 import type { BargeInCoordinator } from './barge-in-coordinator';
 import type { CrisisHandler } from './crisis-handler';
 import type { ShadowReasoningPipeline } from './shadow-reasoning-pipeline';
@@ -213,7 +214,7 @@ export class SidebandAgent {
   private triggerTurnResponse(seq: number, signal: AbortSignal): void {
     const { upstreamWs, coordinator } = this.config;
     if (!coordinator.isValid(seq) || signal.aborted) return;
-    if (upstreamWs.readyState !== WebSocket.OPEN) return;
+    if (!isWsOpen(upstreamWs)) return;
     upstreamWs.send(JSON.stringify({ type: 'response.create' }));
   }
 

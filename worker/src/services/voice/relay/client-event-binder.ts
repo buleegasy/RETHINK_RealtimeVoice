@@ -1,5 +1,6 @@
 import { RealtimeGatewayAdapter } from '../../../adapters/realtime-gateway-adapter';
 import type { BargeInCoordinator } from '../barge-in-coordinator';
+import { isWsOpen } from '../../../lib/ws-constants';
 
 export class ClientEventBinder {
   public static parseJsonSafely(data: any): any {
@@ -37,7 +38,7 @@ export class ClientEventBinder {
       const payload = this.parseJsonSafely(eventData);
 
       if (payload?.type === 'client.ping') {
-        if (serverWs.readyState === WebSocket.OPEN) {
+        if (isWsOpen(serverWs)) {
           serverWs.send(
             JSON.stringify({
               type: 'server.pong',
@@ -113,7 +114,7 @@ export class ClientEventBinder {
 
     serverWs.addEventListener('message', (event) => {
       try {
-        if (upstreamWs.readyState !== WebSocket.OPEN || !isSessionReady()) {
+        if (!isWsOpen(upstreamWs) || !isSessionReady()) {
           if (earlyMessageQueue.length < MAX_EARLY_QUEUE_SIZE) {
             earlyMessageQueue.push(event.data);
           }

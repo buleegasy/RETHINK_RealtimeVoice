@@ -1,4 +1,5 @@
 import type { BargeInCoordinator } from '../barge-in-coordinator';
+import { isWsOpen } from '../../../lib/ws-constants';
 
 export class ShadowTurnCoordinator {
   public static triggerTurnResponse(
@@ -9,7 +10,7 @@ export class ShadowTurnCoordinator {
     cognitiveHint?: string | null,
   ): void {
     if (!coordinator.isValid(currentSeq) || signal.aborted) return;
-    if (upstreamWs.readyState !== WebSocket.OPEN) return;
+    if (!isWsOpen(upstreamWs)) return;
 
     if (cognitiveHint && cognitiveHint.trim()) {
       upstreamWs.send(
@@ -69,7 +70,7 @@ export class ShadowTurnCoordinator {
       })
       ?.then((hint: string) => {
         if (signal.aborted || !coordinator.isValid(currentSeq)) return;
-        if (serverWs && serverWs.readyState === WebSocket.OPEN) {
+        if (isWsOpen(serverWs)) {
           serverWs.send(
             JSON.stringify({
               type: 'rethink.telemetry.shadow_directive',
@@ -81,7 +82,7 @@ export class ShadowTurnCoordinator {
             }),
           );
         }
-        if (hint && upstreamWs?.readyState === WebSocket.OPEN) {
+        if (hint && isWsOpen(upstreamWs)) {
           const delegationId = getActiveDelegationId?.();
           if (isDirectLive && delegationId) {
             upstreamWs.send(
@@ -162,7 +163,7 @@ export class ShadowTurnCoordinator {
       hasResponded = true;
       const durationMs = Date.now() - shadowStartTime;
 
-      if (serverWs && serverWs.readyState === WebSocket.OPEN) {
+      if (isWsOpen(serverWs)) {
         serverWs.send(
           JSON.stringify({
             type: 'rethink.telemetry.shadow_directive',

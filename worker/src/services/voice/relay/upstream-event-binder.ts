@@ -1,5 +1,6 @@
 import { RealtimeGatewayAdapter } from '../../../adapters/realtime-gateway-adapter';
 import type { SidebandAgent } from '../sideband-agent';
+import { isWsOpen } from '../../../lib/ws-constants';
 
 export class UpstreamEventBinder {
   public static bindUpstreamEvents(params: {
@@ -35,7 +36,7 @@ export class UpstreamEventBinder {
             if (payload.type === 'session.output_audio.delta') {
               if (!isAssistantSpeaking) {
                 isAssistantSpeaking = true;
-                if (serverWs.readyState === WebSocket.OPEN) {
+                if (isWsOpen(serverWs)) {
                   serverWs.send(JSON.stringify({ type: 'response.created' }));
                 }
               }
@@ -45,7 +46,7 @@ export class UpstreamEventBinder {
               assistantSilenceTimer = setTimeout(() => {
                 if (isAssistantSpeaking) {
                   isAssistantSpeaking = false;
-                  if (serverWs.readyState === WebSocket.OPEN) {
+                  if (isWsOpen(serverWs)) {
                     serverWs.send(JSON.stringify({ type: 'response.done' }));
                   }
                   sidebandAgent.finalizeAssistantTurn();
@@ -68,7 +69,7 @@ export class UpstreamEventBinder {
             isDirectLive,
           );
 
-          if (serverWs.readyState === WebSocket.OPEN) {
+          if (isWsOpen(serverWs)) {
             serverWs.send(JSON.stringify(transformed));
           }
 
