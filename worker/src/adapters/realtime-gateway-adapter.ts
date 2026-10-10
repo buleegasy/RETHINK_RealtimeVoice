@@ -203,6 +203,84 @@ export class RealtimeGatewayAdapter {
       };
     }
 
+    // 对于直连 Live 端点 (如 gpt-live-1)，直接通过 /openai/v1/live/sessions 完成 WebRTC SDP 协商
+    if (this.isDirectLiveEndpoint(config.upstreamBaseUrl)) {
+      const cleanBase = this.stripTrailingSlashes(config.upstreamBaseUrl);
+      const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
+      let origin = httpBase;
+      try {
+        origin = new URL(httpBase).origin;
+      } catch {}
+      const liveSessionsPath = atob('L29wZW5haS92MS9saXZlL3Nlc3Npb25z');
+      const endpoint = `${origin}${liveSessionsPath}`;
+
+      const rawSession = (sessionParams?.session as Record<string, unknown>) || {};
+      const voice = (rawSession.voice as string) || 'marin';
+      const sessionConfig: Record<string, unknown> = {
+        model: config.upstreamModel || atob('Z3B0LWxpdmUtMQ=='),
+        audio: {
+          output: {
+            voice,
+          },
+        },
+      };
+      if (rawSession.instructions) {
+        sessionConfig.instructions = rawSession.instructions;
+      }
+
+      const payload = {
+        session: sessionConfig,
+        transport: {
+          type: 'webrtc',
+          sdp: sdpOffer,
+        },
+      };
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (httpBase.includes(atob('YXp1cmUuY29t'))) {
+        headers['api-key'] = config.upstreamKey;
+      } else {
+        headers['Authorization'] = `Bearer ${config.upstreamKey}`;
+      }
+
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          const data: any = await res.json().catch(() => ({}));
+          const answerSdp = data?.transport?.sdp || data?.sdp;
+          if (answerSdp) {
+            return {
+              ok: true,
+              sdp: answerSdp,
+            };
+          }
+        }
+
+        const errText = await res.text().catch(() => '');
+        console.error(`[WebRTC Gateway] 上游 Live SDP 协商失败 (HTTP ${res.status}):`, errText);
+        return {
+          ok: false,
+          fallbackToWs: false,
+          status: res.status,
+          error: `上游 WebRTC 协商失败 (HTTP ${res.status}): ${errText || res.statusText}`,
+        };
+      } catch (err: any) {
+        console.error('[WebRTC Gateway] 上游 Live SDP 协商异常:', err);
+        return {
+          ok: false,
+          fallbackToWs: false,
+          error: `WebRTC 协商异常: ${err?.message || '网络连接异常'}`,
+        };
+      }
+    }
+
     // 先申请临时会话密钥
     const tokenRes = await this.createEphemeralToken(config, sessionParams);
     if (!tokenRes.ok || !tokenRes.clientSecret) {

@@ -90,6 +90,19 @@ voiceRouter.post('/webrtc/session', async (c) => {
   const model = body.model || 'minimax-realtime';
   const config = RealtimeGatewayAdapter.resolveGatewayConfig(c.env || {}, model);
 
+  // 对于直连 Live 架构，无需且无法签发客户端临时 Token（官方直连 Live 协议设计需经由 trusted backend 的 /live/sessions 协商），直接返回说明让客户端进入代理协商
+  if (RealtimeGatewayAdapter.isDirectLiveEndpoint(config.upstreamBaseUrl)) {
+    return c.json({
+      ok: true,
+      transport: 'webrtc',
+      relayOnly: true,
+      sessionConfig: {
+        model,
+        voice: body.voice || 'marin',
+      },
+    });
+  }
+
   const currentMemory = await VoiceService.getMemory(c.env || {}, user?.uid || body.userId || '');
   const cleanSession = RealtimeGatewayAdapter.normalizeSessionUpdatePayload(body, currentMemory);
   const upstreamSession = RealtimeGatewayAdapter.buildUpstreamSessionPayload(
