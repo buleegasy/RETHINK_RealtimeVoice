@@ -95,3 +95,34 @@ export function finalizeDialogueTurns(
 
   return { lastUserTurnId: userTurnId, lastUserTurnTimestamp: userTurnTimestamp };
 }
+
+export function applyLocalInterrupt(params: {
+  audioGraph: any;
+  client: any;
+  transcription: BufferedTranscriptionPipeline;
+  asstStartTime: number | null;
+  interruptTime: number;
+}): void {
+  useTelemetryStore.getState().incrementBargeIns();
+  const playedMs = params.audioGraph ? params.audioGraph.getPlaybackDurationMs() : 0;
+  if (params.audioGraph) {
+    params.audioGraph.stopPlayback(150);
+    params.audioGraph.setAiThinking(false);
+    params.audioGraph.setAiSpeaking(false);
+  }
+  if (params.client) {
+    params.client.updateTurnDetection('listening');
+    const itemId = params.client.getCurrentResponseItemId?.();
+    params.client.interrupt({
+      itemId: itemId || undefined,
+      audioEndMs: playedMs,
+    });
+  }
+  useBoothStore.getState().setDuplexPhase('listening');
+  useTelemetryStore.getState().setDuplexPhase('listening');
+  const truncatedTime =
+    params.asstStartTime && params.asstStartTime < params.interruptTime
+      ? params.asstStartTime
+      : params.interruptTime - 1;
+  finalizeAssistantTurn(params.transcription, truncatedTime);
+}

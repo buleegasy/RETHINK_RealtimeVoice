@@ -1,4 +1,6 @@
 import { AUDIO_WORKLET_PROCESSOR_CODE, WORKLET_PROCESSOR_NAME } from './workletProcessor';
+import type { BargeInDetector } from './bargeInDetector';
+import type { PlaybackQueue } from './playbackQueue';
 
 export interface InputPipelineNodes {
   sourceNode: MediaStreamAudioSourceNode;
@@ -153,4 +155,76 @@ export function teardownInputNodes(nodes: {
       nodes.analyserNode.disconnect();
     } catch {}
   }
+}
+
+export function resetInputNodes(target: {
+  mediaStream: MediaStream | null;
+  workletNode: AudioWorkletNode | null;
+  processorNode: ScriptProcessorNode | null;
+  sourceNode: MediaStreamAudioSourceNode | null;
+  highpassFilterNode: BiquadFilterNode | null;
+  inputGainNode: GainNode | null;
+  analyserNode: AnalyserNode | null;
+}): void {
+  teardownInputNodes(target);
+  target.mediaStream = null;
+  target.workletNode = null;
+  target.processorNode = null;
+  target.sourceNode = null;
+  target.highpassFilterNode = null;
+  target.inputGainNode = null;
+  target.analyserNode = null;
+}
+
+export function setMediaStreamTracksEnabled(stream: MediaStream | null, enabled: boolean): void {
+  if (stream) {
+    stream.getAudioTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
+  }
+}
+
+export interface DispatchInputChunkParams {
+  inputBuffer: Float32Array;
+  ctx: AudioContext;
+  bargeInDetector: BargeInDetector;
+  speakerAnalyserNode: AnalyserNode | null;
+  playbackQueue: PlaybackQueue;
+  isMuted: boolean;
+  onAudioChunk: (pcm16Base64: string) => void;
+  onLocalInterrupt?: (triggerPlayedMs: number) => void;
+  stopPlayback: (fadeMs: number) => void;
+}
+
+export function dispatchInputChunk(params: DispatchInputChunkParams): void {
+  const {
+    inputBuffer,
+    ctx,
+    bargeInDetector,
+    speakerAnalyserNode,
+    playbackQueue,
+    isMuted,
+    onAudioChunk,
+    onLocalInterrupt,
+    stopPlayback,
+  } = params;
+  const speakerRms = bargeInDetector.getSpeakerRms(speakerAnalyserNode, playbackQueue.isAiSpeaking);
+  const playedMs = playbackQueue.getPlaybackDurationMs(ctx);
+
+  bargeInDetector.processInputChunk({
+    inputBuffer,
+    sampleRate: ctx.sampleRate,
+    isMuted,
+    isAiSpeakingOrActive: playbackQueue.isAiSpeaking || playbackQueue.isPlaybackActive(),
+    speakerRms,
+    playedMs,
+    onAudioChunk,
+    onBargeIn: (triggerPlayedMs, bufferedChunks) => {
+      stopPlayback(150);
+      for (const chunk of bufferedChunks) {
+        onAudioChunk(chunk);
+      }
+      onLocalInterrupt?.(triggerPlayedMs);
+    },
+  });
 }

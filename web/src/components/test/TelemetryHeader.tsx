@@ -58,6 +58,14 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>返回体验</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setRunMode('admin')}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-600/80 hover:bg-indigo-600 text-white text-xs transition cursor-pointer"
+          title="前往心理教师管理后台"
+        >
+          <span>教师后台</span>
+        </button>
         <div className="h-4 w-[1px] bg-slate-800" />
         <div className="flex items-center gap-2">
           <div className="p-1 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">

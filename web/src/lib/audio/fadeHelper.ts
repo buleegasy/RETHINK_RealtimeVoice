@@ -38,3 +38,18 @@ export function scheduleFadeOutStop(
     }
   }
 }
+
+export function restoreOutputGain(outputGainNode: GainNode, ctx: AudioContext): void {
+  try {
+    outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
+    outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
+  } catch {}
+}
+
+export function disconnectAudioSources(sources: AudioBufferSourceNode[]): void {
+  for (const s of sources) {
+    try {
+      s.disconnect();
+    } catch {}
+  }
+}

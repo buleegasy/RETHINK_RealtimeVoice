@@ -102,4 +102,16 @@ describe('运行模式状态机测试 (Web Mode vs Kiosk Mode)', () => {
     expect(store.runMode).toBe('web');
     expect(localStorage.getItem('rethink_run_mode')).toBeNull();
   });
+
+  it('支持切换至教师后台模式与遥测测试台模式', () => {
+    const store = useModeStore.getState();
+    store.setRunMode('admin');
+    expect(useModeStore.getState().runMode).toBe('admin');
+
+    store.setRunMode('test');
+    expect(useModeStore.getState().runMode).toBe('test');
+
+    store.setRunMode('web');
+    expect(useModeStore.getState().runMode).toBe('web');
+  });
 });

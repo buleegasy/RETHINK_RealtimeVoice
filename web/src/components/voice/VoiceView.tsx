@@ -58,7 +58,15 @@ export const VoiceView: React.FC<VoiceViewProps> = ({ onStartCall, onEndCall }) 
         >
           RETHINK
         </h1>
-        <div className="flex items-center gap-4 text-xs font-mono">
+        <div className="flex items-center gap-3 text-xs font-mono">
+          <button
+            type="button"
+            onClick={() => setRunMode('admin')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-black/15 text-black/70 hover:text-black hover:border-black/30 hover:bg-black/5 transition-all text-xs font-mono cursor-pointer"
+            title="进入心理教师管理后台"
+          >
+            <span>教师后台</span>
+          </button>
           <button
             type="button"
             onClick={() => setRunMode('test')}

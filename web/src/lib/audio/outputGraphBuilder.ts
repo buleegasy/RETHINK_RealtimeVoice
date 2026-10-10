@@ -82,3 +82,51 @@ export function teardownOutputGraph(nodes: {
     nodes.audioCtx.close().catch(() => {});
   }
 }
+
+export function createAudioContext(): AudioContext {
+  const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+  try {
+    return new AudioCtxClass({ sampleRate: 24000, latencyHint: 'interactive' });
+  } catch {
+    return new AudioCtxClass();
+  }
+}
+
+export function ensureOutputNodes(
+  ctx: AudioContext,
+  current: {
+    outputGainNode: GainNode | null;
+    compressorNode: DynamicsCompressorNode | null;
+    speakerAnalyserNode: AnalyserNode | null;
+    speakerSilentSinkNode: GainNode | null;
+  },
+): OutputGraphNodes {
+  if (
+    current.outputGainNode &&
+    current.compressorNode &&
+    current.speakerAnalyserNode &&
+    current.speakerSilentSinkNode
+  ) {
+    return current as OutputGraphNodes;
+  }
+  return buildOutputGraph(ctx);
+}
+
+export function resetOutputNodes(target: {
+  outputGainNode: GainNode | null;
+  compressorNode: DynamicsCompressorNode | null;
+  speakerAnalyserNode: AnalyserNode | null;
+  speakerSilentSinkNode: GainNode | null;
+  remoteMediaStreamSource: MediaStreamAudioSourceNode | null;
+  audioElement: HTMLAudioElement | null;
+  audioCtx: AudioContext | null;
+}): void {
+  teardownOutputGraph(target);
+  target.remoteMediaStreamSource = null;
+  target.audioElement = null;
+  target.speakerAnalyserNode = null;
+  target.speakerSilentSinkNode = null;
+  target.compressorNode = null;
+  target.outputGainNode = null;
+  target.audioCtx = null;
+}

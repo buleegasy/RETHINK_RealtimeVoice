@@ -2,36 +2,38 @@ import { AUDIO_CONSTRAINTS } from '../minimax/constants';
 import { PlaybackQueue } from './playbackQueue';
 import { BargeInDetector } from './bargeInDetector';
 import { computeRmsLevel } from './levelMeter';
-import { setupRemoteWebRtcStream } from './remoteStreamPlayer';
-import { buildOutputGraph, teardownOutputGraph } from './outputGraphBuilder';
+import { resetOutputNodes, createAudioContext, ensureOutputNodes } from './outputGraphBuilder';
 import {
   buildInputPipeline,
   setupAudioProcessor,
-  teardownInputNodes,
+  resetInputNodes,
   reconnectInputStream,
+  setMediaStreamTracksEnabled,
+  dispatchInputChunk,
 } from './inputGraphBuilder';
 import { playDecodedAudioUrl, playDecodedBase64Audio } from './audioBufferPlayer';
 import { bindDeviceWatcher, unbindDeviceWatcher } from './deviceWatcher';
+import { setupRemoteWebRtcStream } from './remoteStreamPlayer';
 
 /**
  * 客户端 Web Audio 拓扑调度核心服务 (AudioGraphService)
  * 职责：麦克风采集链路组装、音频工作线程 (AudioWorklet) 桥接、插话检测与播放队列分流
  */
 export class AudioGraphService {
-  private audioCtx: AudioContext | null = null;
-  private mediaStream: MediaStream | null = null;
-  private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private workletNode: AudioWorkletNode | null = null;
-  private processorNode: ScriptProcessorNode | null = null;
-  private analyserNode: AnalyserNode | null = null;
-  private speakerAnalyserNode: AnalyserNode | null = null;
-  private outputGainNode: GainNode | null = null;
-  private speakerSilentSinkNode: GainNode | null = null;
-  private compressorNode: DynamicsCompressorNode | null = null;
-  private inputGainNode: GainNode | null = null;
-  private highpassFilterNode: BiquadFilterNode | null = null;
-  private remoteMediaStreamSource: MediaStreamAudioSourceNode | null = null;
-  private audioElement: HTMLAudioElement | null = null;
+  public audioCtx: AudioContext | null = null;
+  public mediaStream: MediaStream | null = null;
+  public sourceNode: MediaStreamAudioSourceNode | null = null;
+  public workletNode: AudioWorkletNode | null = null;
+  public processorNode: ScriptProcessorNode | null = null;
+  public analyserNode: AnalyserNode | null = null;
+  public speakerAnalyserNode: AnalyserNode | null = null;
+  public outputGainNode: GainNode | null = null;
+  public speakerSilentSinkNode: GainNode | null = null;
+  public compressorNode: DynamicsCompressorNode | null = null;
+  public inputGainNode: GainNode | null = null;
+  public highpassFilterNode: BiquadFilterNode | null = null;
+  public remoteMediaStreamSource: MediaStreamAudioSourceNode | null = null;
+  public audioElement: HTMLAudioElement | null = null;
 
   private isMuted: boolean = false;
   private onLocalInterruptCallback: ((playedMs: number) => void) | null = null;
@@ -72,12 +74,7 @@ export class AudioGraphService {
 
   public async initAudioContext(): Promise<AudioContext> {
     if (!this.audioCtx) {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      try {
-        this.audioCtx = new AudioCtxClass({ sampleRate: 24000, latencyHint: 'interactive' });
-      } catch {
-        this.audioCtx = new AudioCtxClass();
-      }
+      this.audioCtx = createAudioContext();
     }
     if (this.audioCtx.state === 'suspended') {
       await this.audioCtx.resume();
@@ -104,15 +101,11 @@ export class AudioGraphService {
 
   public setAiSpeaking(speaking: boolean): void {
     this.playbackQueue.setAiSpeaking(speaking);
-    if (!speaking) {
-      this.bargeInDetector.onPlaybackStopped();
-    }
+    if (!speaking) this.bargeInDetector.onPlaybackStopped();
   }
 
   public setAiThinking(thinking: boolean): void {
-    if (thinking) {
-      this.bargeInDetector.reset();
-    }
+    if (thinking) this.bargeInDetector.reset();
   }
 
   public getMicrophoneStream(): MediaStream | null {
@@ -187,55 +180,46 @@ export class AudioGraphService {
     ctx: AudioContext,
     onAudioChunk: (pcm16Base64: string) => void,
   ): void {
-    const speakerRms = this.bargeInDetector.getSpeakerRms(
-      this.speakerAnalyserNode,
-      this.playbackQueue.isAiSpeaking,
-    );
-    const playedMs = this.playbackQueue.getPlaybackDurationMs(ctx);
-
-    this.bargeInDetector.processInputChunk({
+    dispatchInputChunk({
       inputBuffer,
-      sampleRate: ctx.sampleRate,
+      ctx,
+      bargeInDetector: this.bargeInDetector,
+      speakerAnalyserNode: this.speakerAnalyserNode,
+      playbackQueue: this.playbackQueue,
       isMuted: this.isMuted,
-      isAiSpeakingOrActive:
-        this.playbackQueue.isAiSpeaking || this.playbackQueue.isPlaybackActive(),
-      speakerRms,
-      playedMs,
       onAudioChunk,
-      onBargeIn: (triggerPlayedMs, bufferedChunks) => {
-        this.stopPlayback(150);
-        for (const chunk of bufferedChunks) {
-          onAudioChunk(chunk);
-        }
-        this.onLocalInterruptCallback?.(triggerPlayedMs);
-      },
+      onLocalInterrupt: (ms) => this.onLocalInterruptCallback?.(ms),
+      stopPlayback: (fadeMs) => this.stopPlayback(fadeMs),
     });
   }
 
   private ensureOutputGraph(ctx: AudioContext): GainNode {
-    if (!this.outputGainNode) {
-      const output = buildOutputGraph(ctx);
-      this.outputGainNode = output.outputGainNode;
-      this.compressorNode = output.compressorNode;
-      this.speakerAnalyserNode = output.speakerAnalyserNode;
-      this.speakerSilentSinkNode = output.speakerSilentSinkNode;
-    }
+    const output = ensureOutputNodes(ctx, this);
+    this.outputGainNode = output.outputGainNode;
+    this.compressorNode = output.compressorNode;
+    this.speakerAnalyserNode = output.speakerAnalyserNode;
+    this.speakerSilentSinkNode = output.speakerSilentSinkNode;
     return this.outputGainNode;
   }
 
   public async playAudioUrl(url: string, onEnded?: () => void): Promise<void> {
     const ctx = await this.initAudioContext();
-    const outputGain = this.ensureOutputGraph(ctx);
-    await playDecodedAudioUrl(ctx, url, outputGain, this.analyserNode, this.playbackQueue, onEnded);
+    await playDecodedAudioUrl(
+      ctx,
+      url,
+      this.ensureOutputGraph(ctx),
+      this.analyserNode,
+      this.playbackQueue,
+      onEnded,
+    );
   }
 
   public async playBase64Audio(base64Data: string, onEnded?: () => void): Promise<void> {
     const ctx = await this.initAudioContext();
-    const outputGain = this.ensureOutputGraph(ctx);
     await playDecodedBase64Audio(
       ctx,
       base64Data,
-      outputGain,
+      this.ensureOutputGraph(ctx),
       this.analyserNode,
       this.playbackQueue,
       onEnded,
@@ -263,11 +247,7 @@ export class AudioGraphService {
 
   public setMute(muted: boolean): void {
     this.isMuted = muted;
-    if (this.mediaStream) {
-      this.mediaStream.getAudioTracks().forEach((track) => {
-        track.enabled = !muted;
-      });
-    }
+    setMediaStreamTracksEnabled(this.mediaStream, !muted);
   }
 
   public getAudioLevel(): number {
@@ -283,22 +263,7 @@ export class AudioGraphService {
   }
 
   public stopRecording(): void {
-    teardownInputNodes({
-      mediaStream: this.mediaStream,
-      workletNode: this.workletNode,
-      processorNode: this.processorNode,
-      sourceNode: this.sourceNode,
-      highpassFilterNode: this.highpassFilterNode,
-      inputGainNode: this.inputGainNode,
-      analyserNode: this.analyserNode,
-    });
-    this.mediaStream = null;
-    this.workletNode = null;
-    this.processorNode = null;
-    this.sourceNode = null;
-    this.highpassFilterNode = null;
-    this.inputGainNode = null;
-    this.analyserNode = null;
+    resetInputNodes(this);
   }
 
   public isRecordingActive(): boolean {
@@ -310,22 +275,7 @@ export class AudioGraphService {
     this.stopRecording();
     unbindDeviceWatcher(this.boundDeviceChangeListener);
     this.boundDeviceChangeListener = null;
-    teardownOutputGraph({
-      outputGainNode: this.outputGainNode,
-      compressorNode: this.compressorNode,
-      speakerAnalyserNode: this.speakerAnalyserNode,
-      speakerSilentSinkNode: this.speakerSilentSinkNode,
-      remoteMediaStreamSource: this.remoteMediaStreamSource,
-      audioElement: this.audioElement,
-      audioCtx: this.audioCtx,
-    });
-    this.remoteMediaStreamSource = null;
-    this.audioElement = null;
-    this.speakerAnalyserNode = null;
-    this.speakerSilentSinkNode = null;
-    this.compressorNode = null;
-    this.outputGainNode = null;
-    this.audioCtx = null;
+    resetOutputNodes(this);
   }
 }
 

@@ -9,11 +9,15 @@ import { BufferedTranscriptionPipeline } from '../lib/pipelines/transcription/bu
 import { safeRandomId } from '../lib/utils';
 import { useVoiceAudio } from './useVoiceAudio';
 import { useSessionPersistence } from './useSessionPersistence';
-import { ensureKioskAuthToken } from './voice/kioskAuth';
-import { finalizeDialogueTurns, finalizeAssistantTurn } from './voice/turnFinalizer';
+import { finalizeDialogueTurns, applyLocalInterrupt } from './voice/turnFinalizer';
 import { buildVoiceClientCallbacks } from './voice/sessionCallbacks';
 import { startSessionTimers, stopSessionTimers } from './voice/sessionTimers';
 import { formatAudioInitError } from './voice/voiceUtils';
+import { ensureKioskAuthToken } from './voice/kioskAuth';
+import {
+  bindStreamingTranscriptSubscription,
+  bindCrisisEndCallListener,
+} from './voice/voiceSubscriptions';
 
 /**
  * useVoiceSession
@@ -236,31 +240,17 @@ export function useVoiceSession() {
   endCallRef.current = endCall;
 
   const interrupt = useCallback(() => {
-    useTelemetryStore.getState().incrementBargeIns();
     const interruptTime = Date.now();
     userSpeechStartTimeRef.current = userSpeechStartTimeRef.current || interruptTime;
-    const playedMs = audioGraphRef.current ? audioGraphRef.current.getPlaybackDurationMs() : 0;
-    if (audioGraphRef.current) {
-      audioGraphRef.current.stopPlayback(150);
-      audioGraphRef.current.setAiThinking(false);
-      audioGraphRef.current.setAiSpeaking(false);
-    }
-    if (clientRef.current) {
-      clientRef.current.updateTurnDetection('listening');
-      const itemId = clientRef.current?.getCurrentResponseItemId();
-      clientRef.current.interrupt({
-        itemId: itemId || undefined,
-        audioEndMs: playedMs,
-      });
-    }
-    setDuplexPhase('listening');
-    useTelemetryStore.getState().setDuplexPhase('listening');
-    const asstStartTime = asstSpeechStartTimeRef.current;
+    applyLocalInterrupt({
+      audioGraph: audioGraphRef.current,
+      client: clientRef.current,
+      transcription: transcriptionRef.current,
+      asstStartTime: asstSpeechStartTimeRef.current,
+      interruptTime,
+    });
     asstSpeechStartTimeRef.current = null;
-    const truncatedAsstTime =
-      asstStartTime && asstStartTime < interruptTime ? asstStartTime : interruptTime - 1;
-    finalizeAssistantTurn(transcriptionRef.current, truncatedAsstTime);
-  }, [audioGraphRef, setDuplexPhase]);
+  }, [audioGraphRef]);
 
   const toggleMute = useCallback(() => {
     const nextMuted = !isMuted;
@@ -271,31 +261,13 @@ export function useVoiceSession() {
   }, [isMuted, setIsMuted, audioGraphRef]);
 
   useEffect(() => {
-    const unsub = transcriptionRef.current.subscribe((seg) => {
-      if (!seg.isFinal) {
-        if (seg.speaker === 'user') {
-          useTelemetryStore.getState().setStreamingUserText(seg.text);
-        } else {
-          useTelemetryStore.getState().setStreamingAssistantText(seg.text);
-        }
-      }
-    });
-    return () => {
-      unsub();
-    };
+    return bindStreamingTranscriptSubscription(transcriptionRef.current);
   }, []);
 
   useEffect(() => {
-    const handleCrisisEndCall = () => {
-      void endCall();
-    };
-    if (typeof window !== 'undefined') {
-      window.addEventListener('rethink:crisis:end_call', handleCrisisEndCall);
-    }
+    const unbindCrisis = bindCrisisEndCallListener(endCall);
     return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('rethink:crisis:end_call', handleCrisisEndCall);
-      }
+      unbindCrisis();
       stopSessionTimers(timerRef, telemetryTimerRef);
       stopVisualizer();
       cleanupAudio();

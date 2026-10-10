@@ -1,5 +1,10 @@
 import { base64PCMToAudioBuffer } from './audioResampler';
-import { applyImmediateStop, scheduleFadeOutStop } from './fadeHelper';
+import {
+  applyImmediateStop,
+  scheduleFadeOutStop,
+  restoreOutputGain,
+  disconnectAudioSources,
+} from './fadeHelper';
 
 export interface PlaybackStateListener {
   onPlaybackStateChange: (isPlaying: boolean) => void;
@@ -242,13 +247,6 @@ export class PlaybackQueue {
     this.pendingCleanupSources.push(...sourcesToStop);
     for (const s of sourcesToStop) s.onended = null;
 
-    const restoreGain = () => {
-      try {
-        outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
-        outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
-      } catch {}
-    };
-
     if ((sourcesToStop.length === 0 && !wasSpeaking) || fadeDurationMs <= 0) {
       applyImmediateStop(sourcesToStop, ctx, outputGainNode);
       this.pendingCleanupSources = [];
@@ -261,14 +259,10 @@ export class PlaybackQueue {
     const timerEpoch = this.playbackEpoch;
     this.stopPlaybackTimer = setTimeout(() => {
       this.stopPlaybackTimer = null;
-      for (const s of this.pendingCleanupSources) {
-        try {
-          s.disconnect();
-        } catch {}
-      }
+      disconnectAudioSources(this.pendingCleanupSources);
       this.pendingCleanupSources = [];
       if (this.playbackEpoch === timerEpoch) {
-        restoreGain();
+        restoreOutputGain(outputGainNode, ctx);
         this.nextPlayTime = ctx.currentTime;
       }
     }, fadeDurationMs + 20);
@@ -282,16 +276,9 @@ export class PlaybackQueue {
     if (this.stopPlaybackTimer) {
       clearTimeout(this.stopPlaybackTimer);
       this.stopPlaybackTimer = null;
-      for (const s of this.pendingCleanupSources) {
-        try {
-          s.disconnect();
-        } catch {}
-      }
+      disconnectAudioSources(this.pendingCleanupSources);
       this.pendingCleanupSources = [];
-      try {
-        outputGainNode.gain.cancelScheduledValues(ctx.currentTime);
-        outputGainNode.gain.setValueAtTime(0.85, ctx.currentTime);
-      } catch {}
+      restoreOutputGain(outputGainNode, ctx);
       this.nextPlayTime = Math.max(ctx.currentTime + 0.025, this.nextPlayTime);
     }
   }

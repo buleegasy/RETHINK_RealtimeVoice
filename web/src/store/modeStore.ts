@@ -40,16 +40,42 @@ const detectInitialMode = (): { mode: AppRunMode; deviceId: string } => {
   const params = new URLSearchParams(window.location.search);
   const modeParam = params.get('mode');
   const deviceParam = params.get('device');
+  const pathname = (window.location.pathname || '').toLowerCase();
+  const hash = (window.location.hash || '').toLowerCase();
 
-  if (modeParam === 'admin' || modeParam === 'teacher') {
+  // 1. 优先通过显式 URL 参数、路径名或 Hash 锚点判定
+  if (
+    modeParam === 'admin' ||
+    modeParam === 'teacher' ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/teacher') ||
+    hash.startsWith('#admin') ||
+    hash.startsWith('#/admin') ||
+    hash.startsWith('#teacher') ||
+    hash.startsWith('#/teacher')
+  ) {
     return { mode: 'admin', deviceId: 'kiosk-booth-01' };
   }
 
-  if (modeParam === 'test' || modeParam === 'debug' || modeParam === 'telemetry') {
+  if (
+    modeParam === 'test' ||
+    modeParam === 'debug' ||
+    modeParam === 'telemetry' ||
+    pathname.startsWith('/test') ||
+    pathname.startsWith('/telemetry') ||
+    hash.startsWith('#test') ||
+    hash.startsWith('#/test')
+  ) {
     return { mode: 'test', deviceId: 'telemetry-test-bench' };
   }
 
-  if (modeParam === 'kiosk' || deviceParam) {
+  if (
+    modeParam === 'kiosk' ||
+    deviceParam ||
+    pathname.startsWith('/kiosk') ||
+    hash.startsWith('#kiosk') ||
+    hash.startsWith('#/kiosk')
+  ) {
     return {
       mode: 'kiosk',
       deviceId: deviceParam || 'kiosk-booth-01',
@@ -64,17 +90,10 @@ const detectInitialMode = (): { mode: AppRunMode; deviceId: string } => {
   const storedDevice = safeGetItem('rethink_kiosk_device') || 'kiosk-booth-01';
   const hasAuthToken = !!safeGetItem('rethink_auth_token');
 
-  // 严禁将 admin 作为进入网页的持久化恢复模式，确保每次进入网页都是终端而不是后台面板
-  if (storedMode === 'admin') {
-    try {
-      if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
-        localStorage.removeItem('rethink_run_mode');
-      }
-    } catch {}
-  }
-
   let effectiveMode: AppRunMode = 'web';
-  if (storedMode === 'test') {
+  if (storedMode === 'admin') {
+    effectiveMode = 'admin';
+  } else if (storedMode === 'test') {
     effectiveMode = 'test';
   } else if (storedMode === 'kiosk' && hasAuthToken) {
     effectiveMode = 'kiosk';
@@ -117,9 +136,21 @@ export const useModeStore = create<ModeState>((set) => ({
         if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
           localStorage.removeItem('rethink_run_mode');
         }
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('mode');
+          window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+        }
       } catch {}
     } else {
       safeSetItem('rethink_run_mode', mode);
+      try {
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          const url = new URL(window.location.href);
+          url.searchParams.set('mode', mode);
+          window.history.replaceState({}, '', url.pathname + url.search);
+        }
+      } catch {}
     }
     set({ runMode: mode });
   },
