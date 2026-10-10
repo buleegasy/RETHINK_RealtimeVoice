@@ -19,6 +19,9 @@ export class BargeInDetector {
   // 扬声器声学回声包络峰值保持与混响衰减 (Acoustic Echo Peak-Hold & Decay)
   public speakerEnvelopeRms: number = 0;
 
+  // AI 播报停止后的扬声器尾音与混响冷却保护窗 (Post-Playback Echo Cooldown)
+  private postPlaybackCooldownFrames: number = 0;
+
   // 倾听态噪声门控与无损预录状态
   private isListeningSpeechActive: boolean = false;
   private listeningHangoverFrames: number = 0;
@@ -31,6 +34,16 @@ export class BargeInDetector {
     this.listeningHangoverFrames = 0;
     this.listeningPreRoll = [];
     this.speakerEnvelopeRms = 0;
+    this.postPlaybackCooldownFrames = 0;
+  }
+
+  public onPlaybackStopped(): void {
+    this.consecutiveSpeechFrames = 0;
+    this.preRollChunks = [];
+    this.isListeningSpeechActive = false;
+    this.listeningHangoverFrames = 0;
+    // 留出 8 帧 (~320ms) 回声混响冷却保护期，防止尾音外放被麦克风当成来访者插话推上云端
+    this.postPlaybackCooldownFrames = 8;
   }
 
   public resetWarmUp(frames: number = 4): void {
@@ -39,7 +52,7 @@ export class BargeInDetector {
 
   public getSpeakerRms(speakerAnalyser: AnalyserNode | null, isAiSpeaking: boolean): number {
     if (!speakerAnalyser || !isAiSpeaking) {
-      this.speakerEnvelopeRms *= 0.85;
+      this.speakerEnvelopeRms *= 0.92;
       return this.speakerEnvelopeRms;
     }
     const data = new Uint8Array(speakerAnalyser.frequencyBinCount);
@@ -50,8 +63,8 @@ export class BargeInDetector {
       sum += v * v;
     }
     const instantRms = Math.sqrt(sum / data.length);
-    // 峰值保持与指数衰减滤波，覆盖声卡硬件输出与房间混响延时 (100ms ~ 300ms)
-    this.speakerEnvelopeRms = Math.max(instantRms, this.speakerEnvelopeRms * 0.88);
+    // 峰值保持与指数衰减滤波，覆盖声卡硬件输出与房间混响延时 (100ms ~ 350ms)
+    this.speakerEnvelopeRms = Math.max(instantRms, this.speakerEnvelopeRms * 0.93);
     return Math.max(instantRms, this.speakerEnvelopeRms);
   }
 
@@ -95,6 +108,7 @@ export class BargeInDetector {
     }
 
     if (isAiSpeakingOrActive) {
+      this.postPlaybackCooldownFrames = 8;
       // 扬声器初始瞬态抑制窗：播发启动前 280ms 抑制扬声器初冲激响应
       if (playedMs < 280) {
         this.consecutiveSpeechFrames = 0;
@@ -137,7 +151,12 @@ export class BargeInDetector {
       const base64 = resampleAndEncodePCM(inputBuffer, sampleRate, 24000);
       if (!base64) return;
 
-      const gateThreshold = Math.max(0.038, this.noiseFloorRms * 1.2);
+      let gateThreshold = Math.max(0.038, this.noiseFloorRms * 1.2);
+      if (this.postPlaybackCooldownFrames > 0) {
+        this.postPlaybackCooldownFrames--;
+        // 播报刚结束的混响冷却期内，提升门限至 0.12 防止尾音混响反冲被误当成用户插话
+        gateThreshold = Math.max(0.12, this.noiseFloorRms * 2.2);
+      }
 
       if (micRms >= gateThreshold) {
         // 用户有效发声，激活连续发射与保持窗 (12 帧约 500ms 消除停顿吃字)

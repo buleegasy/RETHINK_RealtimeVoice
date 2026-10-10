@@ -352,7 +352,7 @@ export class RelaySessionCoordinator {
                   }
                   sidebandAgent.finalizeAssistantTurn();
                 }
-              }, 450);
+              }, 800);
             } else if (payload.type === 'session.output_audio.done') {
               if (assistantSilenceTimer) {
                 clearTimeout(assistantSilenceTimer);

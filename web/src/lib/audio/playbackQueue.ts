@@ -162,7 +162,7 @@ export class PlaybackQueue {
               this.setAiSpeaking(false);
               this.isJitterBuffering = true;
             }
-          }, 180);
+          }, 450);
         }
       };
     }

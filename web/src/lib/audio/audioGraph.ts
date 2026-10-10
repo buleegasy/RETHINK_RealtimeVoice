@@ -34,7 +34,7 @@ export class AudioGraphService {
     this.playbackQueue = new PlaybackQueue({
       onPlaybackStateChange: (isPlaying) => {
         if (!isPlaying) {
-          this.bargeInDetector.reset();
+          this.bargeInDetector.onPlaybackStopped();
         }
         this.onPlaybackStateChange?.(isPlaying);
       },
@@ -100,7 +100,7 @@ export class AudioGraphService {
   public setAiSpeaking(speaking: boolean): void {
     this.playbackQueue.setAiSpeaking(speaking);
     if (!speaking) {
-      this.bargeInDetector.reset();
+      this.bargeInDetector.onPlaybackStopped();
     }
   }
 
