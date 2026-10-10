@@ -94,34 +94,71 @@ export class MiniMaxWebRtcClient {
         voice: this.options.voice || DEFAULT_VOICE,
       };
 
-      const offerUrl = this.options.offerEndpoint || '/api/voice/webrtc/offer';
-      const res = await apiFetch(offerUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sdpPayload),
-      });
+      let remoteSdp = '';
 
-      if (!res.ok) {
-        this.cleanup();
-        return false;
+      // 1. 尝试通过临时会话密钥 (client_secrets) 发起端到端直连协商
+      try {
+        const sessionRes = await apiFetch('/api/voice/webrtc/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: this.options.model || 'minimax-realtime',
+            voice: this.options.voice || DEFAULT_VOICE,
+          }),
+        });
+        if (sessionRes.ok) {
+          const sessionData: any = await sessionRes.json().catch(() => ({}));
+          if (sessionData.clientSecret && sessionData.callsUrl) {
+            const directRes = await fetch(sessionData.callsUrl, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${sessionData.clientSecret}`,
+                'Content-Type': 'application/sdp',
+              },
+              body: pc.localDescription?.sdp || offer.sdp,
+            });
+            if (directRes.ok) {
+              remoteSdp = await directRes.text();
+            }
+          }
+        }
+      } catch (directErr) {
+        console.warn('[MiniMaxWebRtcClient] 临时密钥直连尝试跳过，使用中继协商:', directErr);
       }
 
-      const data = await res.json().catch(() => ({}));
-      if (data.fallbackToWs || !data.sdp) {
-        this.cleanup();
-        return false;
+      // 2. 若直连未取得 SDP Answer，通过 Worker 网关代理协商
+      if (!remoteSdp) {
+        const offerUrl = this.options.offerEndpoint || '/api/voice/webrtc/offer';
+        const res = await apiFetch(offerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sdpPayload),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          this.cleanup();
+          throw new Error(`SDP 协商网络请求失败 (HTTP ${res.status}): ${errText}`);
+        }
+
+        const data = await res.json().catch(() => ({}));
+        if (!data.sdp) {
+          this.cleanup();
+          throw new Error(data.error || 'WebRTC 协商未返回有效 Remote SDP');
+        }
+        remoteSdp = data.sdp;
       }
 
       await pc.setRemoteDescription({
         type: 'answer',
-        sdp: data.sdp,
+        sdp: remoteSdp,
       });
 
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[MiniMaxWebRtcClient] WebRTC 协商握手异常:', err);
       this.cleanup();
-      return false;
+      throw err;
     }
   }
 

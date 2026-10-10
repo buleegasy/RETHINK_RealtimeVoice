@@ -86,8 +86,12 @@ export class RealtimeGatewayAdapter {
   public static buildUpstreamClientSecretsUrl(baseUrl: string): string {
     const cleanBase = this.stripTrailingSlashes(baseUrl);
     const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
+    let origin = httpBase;
+    try {
+      origin = new URL(httpBase).origin;
+    } catch {}
     const secretsPath = atob('L29wZW5haS92MS9yZWFsdGltZS9jbGllbnRfc2VjcmV0cw==');
-    return httpBase.endsWith(secretsPath) ? httpBase : `${httpBase}${secretsPath}`;
+    return `${origin}${secretsPath}`;
   }
 
   /**
@@ -108,15 +112,21 @@ export class RealtimeGatewayAdapter {
 
     const secretsUrl = this.buildUpstreamClientSecretsUrl(config.upstreamBaseUrl);
     const callsUrl = this.buildUpstreamWebRtcUrl(config.upstreamBaseUrl, config.upstreamModel);
+    const isDirect = this.isDirectLiveEndpoint(config.upstreamBaseUrl);
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (isDirect) {
+      headers['api-key'] = config.upstreamKey;
+    } else {
+      headers['Authorization'] = `Bearer ${config.upstreamKey}`;
+    }
 
     try {
       const res = await fetch(secretsUrl, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.upstreamKey}`,
-          'api-key': config.upstreamKey,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(sessionParams || { session: { model: config.upstreamModel } }),
       });
 
@@ -141,9 +151,12 @@ export class RealtimeGatewayAdapter {
     const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
     const query = `model=${encodeURIComponent(model)}`;
     if (this.isDirectLiveEndpoint(httpBase)) {
+      let origin = httpBase;
+      try {
+        origin = new URL(httpBase).origin;
+      } catch {}
       const callsPath = atob('L29wZW5haS92MS9yZWFsdGltZS9jYWxscw==');
-      const base = httpBase.endsWith(callsPath) ? httpBase : `${httpBase}${callsPath}`;
-      return `${base}?${query}`;
+      return `${origin}${callsPath}?${query}`;
     }
     return httpBase.endsWith('/realtime')
       ? `${httpBase}?${query}`
@@ -161,26 +174,34 @@ export class RealtimeGatewayAdapter {
     sdp?: string;
     fallbackToWs?: boolean;
     wsUrl?: string;
+    status?: number;
     error?: string;
   }> {
     if (!config.upstreamKey) {
       return {
         ok: false,
-        fallbackToWs: true,
-        wsUrl: '/api/voice/ws',
-        error: '未配置上游访问凭证',
+        fallbackToWs: false,
+        error: '未配置上游访问凭证 (API Key)',
       };
     }
 
     const endpoint = this.buildUpstreamWebRtcUrl(config.upstreamBaseUrl, config.upstreamModel);
+    const isDirect = this.isDirectLiveEndpoint(config.upstreamBaseUrl);
+
+    // 直连端点严禁发送 Bearer Token，必须使用 api-key 标头以防被误识别为非法令牌并返回 401
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/sdp',
+    };
+    if (isDirect) {
+      headers['api-key'] = config.upstreamKey;
+    } else {
+      headers['Authorization'] = `Bearer ${config.upstreamKey}`;
+    }
+
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${config.upstreamKey}`,
-          'api-key': config.upstreamKey,
-          'Content-Type': 'application/sdp',
-        },
+        headers,
         body: sdpOffer,
       });
 
@@ -192,16 +213,20 @@ export class RealtimeGatewayAdapter {
         };
       }
 
+      const errText = await res.text().catch(() => '');
+      console.error(`[WebRTC Gateway] 上游 SDP 协商失败 (HTTP ${res.status}):`, errText);
       return {
-        ok: true,
-        fallbackToWs: true,
-        wsUrl: '/api/voice/ws',
+        ok: false,
+        fallbackToWs: false,
+        status: res.status,
+        error: `上游 WebRTC 协商失败 (HTTP ${res.status}): ${errText || res.statusText}`,
       };
-    } catch {
+    } catch (err: any) {
+      console.error('[WebRTC Gateway] 上游 SDP 协商异常:', err);
       return {
-        ok: true,
-        fallbackToWs: true,
-        wsUrl: '/api/voice/ws',
+        ok: false,
+        fallbackToWs: false,
+        error: `WebRTC 协商异常: ${err?.message || '网络连接异常'}`,
       };
     }
   }

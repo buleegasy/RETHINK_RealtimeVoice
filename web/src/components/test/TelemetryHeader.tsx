@@ -37,8 +37,6 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
   const duplexPhase = useTelemetryStore((s) => s.duplexPhase);
   const clearTelemetry = useTelemetryStore((s) => s.clearTelemetry);
   const activeTransport = useTelemetryStore((s) => s.activeTransport);
-  const preferredTransport = useTelemetryStore((s) => s.preferredTransport);
-  const setPreferredTransport = useTelemetryStore((s) => s.setPreferredTransport);
 
   const isCallActive = sessionStatus === 'connected' || sessionStatus === 'connecting';
 
@@ -92,37 +90,13 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
       </div>
 
       <div className="hidden md:flex items-center gap-4 text-xs font-mono">
-        {/* 链路模式控制 pill */}
-        <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded px-1.5 py-1">
+        {/* 链路模式展示: 纯粹 WebRTC (UDP/Opus 直连) */}
+        <div className="flex items-center gap-1.5 bg-slate-900 border border-emerald-500/40 rounded px-2 py-1">
           <span className="text-[10px] text-slate-400">链路:</span>
-          {(['auto', 'webrtc', 'websocket'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              disabled={isCallActive}
-              onClick={() => setPreferredTransport(t)}
-              className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition cursor-pointer ${
-                preferredTransport === t
-                  ? t === 'webrtc'
-                    ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold'
-                    : t === 'auto'
-                      ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-bold'
-                      : 'bg-purple-500/30 text-purple-300 border border-purple-500/40 font-bold'
-                  : 'text-slate-400 hover:text-slate-200'
-              } ${isCallActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title={
-                isCallActive
-                  ? '通话中锁定当前通道'
-                  : t === 'auto'
-                    ? '自适应模式 (推荐): 优先探测 WebRTC，若上游暂不支持 SDP 则无感回退至 WS'
-                    : t === 'webrtc'
-                      ? '强制 WebRTC 直连: 需上游网关开放 SDP 端点，上游不支持时将抛错'
-                      : '强制 WebSocket 链路: 采用经典稳定全双工网关'
-              }
-            >
-              {t === 'auto' ? '自适应' : t === 'webrtc' ? 'WebRTC' : 'WS'}
-            </button>
-          ))}
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            WebRTC (UDP/Opus 直连)
+          </span>
         </div>
 
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800">

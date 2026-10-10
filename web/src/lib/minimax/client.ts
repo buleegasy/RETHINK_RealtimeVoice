@@ -99,9 +99,9 @@ export class MiniMaxRealtimeClient {
   public async connect(localStream?: MediaStream): Promise<void> {
     this.isExplicitlyClosed = false;
     this.currentTurnDetectionMode = null;
-    const mode = this.options.transport || (this.options.relayUrl ? 'websocket' : 'auto');
+    const mode = this.options.transport ?? (this.options.relayUrl ? 'websocket' : 'webrtc');
 
-    if ((mode === 'webrtc' || mode === 'auto') && typeof RTCPeerConnection !== 'undefined') {
+    if (mode === 'webrtc' || mode === 'auto') {
       try {
         const rtc = new MiniMaxWebRtcClient({
           sessionId: this.options.sessionId,
@@ -136,21 +136,23 @@ export class MiniMaxRealtimeClient {
           this.callbacks.onTransportChange?.('webrtc');
           return;
         }
-      } catch (err) {
-        console.warn('[MiniMaxClient] WebRTC 初始化异常，降级至 WebSocket:', err);
+      } catch (err: any) {
+        console.warn('[MiniMaxClient] WebRTC 初始化异常:', err);
+        const errMsg = err?.message || 'WebRTC 握手建连失败';
+        this.callbacks.onError?.(new Error(`WebRTC 链路异常: ${errMsg}`));
+        if (mode === 'webrtc') {
+          return;
+        }
       }
 
       if (mode === 'webrtc') {
-        this.callbacks.onError?.(
-          new Error(
-            'WebRTC connection failed: 上游中继未开放 WebRTC SDP 协商端点或网络 UDP 阻断，建议在面板切换为【自适应】或【WS】链路',
-          ),
-        );
         return;
       }
     }
 
-    this.connectWebSocket();
+    if (mode === 'websocket' || (mode === 'auto' && this.options.relayUrl)) {
+      this.connectWebSocket();
+    }
   }
 
   public connectWebSocket(): void {

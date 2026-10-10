@@ -67,7 +67,7 @@ describe('WebRTC 服务端 SDP 协商与路由端点测试', () => {
     expect(data.sdp).toBe('v=0\r\nsdp_remote_answer\r\n');
   });
 
-  it('POST /api/voice/webrtc/offer 上游网关不支持 WebRTC 时自动建议降级至 WebSocket', async () => {
+  it('POST /api/voice/webrtc/offer 上游网关失败时应返回 502 错误并包含详细错误信息', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 400,
@@ -94,9 +94,9 @@ describe('WebRTC 服务端 SDP 协商与路由端点测试', () => {
 
     expect(res.status).toBe(200);
     const data: any = await res.json();
-    expect(data.ok).toBe(true);
-    expect(data.fallbackToWs).toBe(true);
-    expect(data.wsUrl).toBe('/api/voice/ws');
+    expect(data.ok).toBe(false);
+    expect(data.status).toBe(400);
+    expect(data.error).toContain('OperationNotSupported');
   });
 
   it('POST /api/voice/webrtc/session 正常返回会话配置', async () => {

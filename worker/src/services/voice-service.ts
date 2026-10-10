@@ -35,6 +35,7 @@ export class VoiceService {
     sdp?: string;
     fallbackToWs?: boolean;
     wsUrl?: string;
+    status?: number;
     error?: string;
   }> {
     const sdp = (payload.sdp || '').trim();

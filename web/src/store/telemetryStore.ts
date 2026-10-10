@@ -126,7 +126,7 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
   duplexPhase: 'idle',
   isConnected: false,
   activeTransport: 'webrtc',
-  preferredTransport: 'auto',
+  preferredTransport: 'webrtc',
 
   addShadowDirective: (directive) =>
     set((state) => {

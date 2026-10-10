@@ -173,14 +173,13 @@ export function useVoiceSession() {
         },
       });
 
-      const preferredTransport = useTelemetryStore.getState().preferredTransport || 'auto';
       clientRef.current = new MiniMaxRealtimeClient({
         sessionId: sessionIdRef.current,
         userId: currentUser?.uid || currentUser?.userName || user?.uid || user?.userName,
         username:
           currentUser?.displayName || currentUser?.userName || user?.displayName || user?.userName,
         token: currentToken || undefined,
-        transport: preferredTransport,
+        transport: 'webrtc',
         callbacks: {
           onOpen: () => {
             setSessionStatus('connected');
@@ -477,7 +476,7 @@ export function useVoiceSession() {
       });
 
       const micStream = audioGraph.getMicrophoneStream();
-      clientRef.current.connect(micStream || undefined);
+      await clientRef.current.connect(micStream || undefined);
       startVisualizer();
 
       setCallDuration(0);
