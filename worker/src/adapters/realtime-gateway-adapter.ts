@@ -87,11 +87,17 @@ export class RealtimeGatewayAdapter {
     const cleanBase = this.stripTrailingSlashes(baseUrl);
     const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
     let origin = httpBase;
+    let queryStr = '';
     try {
-      origin = new URL(httpBase).origin;
+      const u = new URL(httpBase);
+      origin = u.origin;
+      const apiVersion = u.searchParams.get('api-version');
+      if (apiVersion) {
+        queryStr = `?api-version=${apiVersion}`;
+      }
     } catch {}
     const secretsPath = atob('L29wZW5haS92MS9yZWFsdGltZS9jbGllbnRfc2VjcmV0cw==');
-    return `${origin}${secretsPath}`;
+    return `${origin}${secretsPath}${queryStr}`;
   }
 
   /**
@@ -149,7 +155,16 @@ export class RealtimeGatewayAdapter {
   public static buildUpstreamWebRtcUrl(baseUrl: string, model: string): string {
     const cleanBase = this.stripTrailingSlashes(baseUrl);
     const httpBase = cleanBase.replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://');
-    const query = `model=${encodeURIComponent(model)}`;
+    let apiVersionParam = '';
+    try {
+      const u = new URL(httpBase);
+      const apiVersion = u.searchParams.get('api-version');
+      if (apiVersion) {
+        apiVersionParam = `&api-version=${apiVersion}`;
+      }
+    } catch {}
+
+    const query = `model=${encodeURIComponent(model)}${apiVersionParam}`;
     if (this.isDirectLiveEndpoint(httpBase)) {
       let origin = httpBase;
       try {
