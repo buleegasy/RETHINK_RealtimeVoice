@@ -1,5 +1,5 @@
 import type { FlashOptions, ShadowReasoningContext, ShadowReasoningResult } from './types';
-import { resolveFlashModel, stripWrappingQuotes } from './constants';
+import { resolveFlashModel, stripWrappingQuotes, trimTrailingSlashes } from './constants';
 
 function cleanCognitiveHint(raw: string): string {
   if (!raw) return '';
@@ -17,34 +17,20 @@ function cleanCognitiveHint(raw: string): string {
   }
 
   if (hint.startsWith('你应该')) {
-    hint = hint
-      .slice(3)
-      .replace(/^[:：\s]+/, '')
-      .trim();
+    hint = hint.slice(3).trim();
+    while (hint.startsWith(':') || hint.startsWith('：')) {
+      hint = hint.slice(1).trim();
+    }
   }
   return hint;
 }
 
-export async function performShadowReasoning(
-  userText: string,
-  context: ShadowReasoningContext,
-  options?: FlashOptions,
-): Promise<ShadowReasoningResult | null> {
-  const clean = (userText || '').trim();
-  if (!clean) return null;
+function buildFallbackHint(context: ShadowReasoningContext): ShadowReasoningResult | null {
+  const firstHint = context.cbtHints?.[0];
+  return firstHint ? { cognitiveHint: cleanCognitiveHint(firstHint) } : null;
+}
 
-  const apiKey = options?.apiKey;
-  if (!apiKey) {
-    if (context.cbtHints && context.cbtHints.length > 0) {
-      return { cognitiveHint: cleanCognitiveHint(context.cbtHints[0]) };
-    }
-    return null;
-  }
-
-  const baseUrl = (options?.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-  const model = resolveFlashModel(options?.model);
-  const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
-
+function buildUserContent(cleanUserText: string, context: ShadowReasoningContext): string {
   const historyStr = (context.history || [])
     .slice(-4)
     .map((h) => `${h.role === 'user' ? '学生' : '助手'}: ${h.content}`)
@@ -52,10 +38,19 @@ export async function performShadowReasoning(
 
   const cbtStr = (context.cbtHints || []).join('; ');
   const memoryStr = context.situationalMemory?.summaryParagraph
-    ? `既往个人情景: ${context.situationalMemory.summaryParagraph}`
+    ? `既往个人情景: ${context.situationalMemory.summaryParagraph}\n`
     : '';
+  const knownName = context.userName || context.situationalMemory?.userName || '未知';
 
-  const systemPrompt = `你是高中校园心理支持后台影子认知大脑，服务受众纯为高中生（严禁提及工作/职场等成人话题）。
+  return `学生最新表述: """${cleanUserText}"""
+对话背景:
+${historyStr || '（无历史上下文）'}
+${memoryStr}CBT参考策略:
+${cbtStr || '（通用倾听与共情）'}
+当前已知姓名: ${knownName}`;
+}
+
+const SYSTEM_PROMPT = `你是高中校园心理支持后台影子认知大脑，服务受众纯为高中生（严禁提及工作/职场等成人话题）。
 结合高中学生最新发言与过往校园情境，在后台异步完成深度思考，直接输出极简纯文本策略指令供语音模型参考。
 
 【输出要求】
@@ -71,12 +66,23 @@ export async function performShadowReasoning(
 5. 存在主义虚无/意义丧失：拒绝宏大说教，引导连接当下可感知的微小生活细节。
 6. 日常闲聊/好奇试探：轻松自然接梗，严禁生造病态焦虑，保持轻快同伴在场感。`;
 
-  const userContent = `学生最新表述: """${clean}"""
-对话背景:
-${historyStr || '（无历史上下文）'}
-${memoryStr ? `${memoryStr}\n` : ''}CBT参考策略:
-${cbtStr || '（通用倾听与共情）'}
-当前已知姓名: ${context.userName || context.situationalMemory?.userName || '未知'}`;
+export async function performShadowReasoning(
+  userText: string,
+  context: ShadowReasoningContext,
+  options?: FlashOptions,
+): Promise<ShadowReasoningResult | null> {
+  const clean = (userText || '').trim();
+  if (!clean) return null;
+
+  const apiKey = options?.apiKey;
+  if (!apiKey) {
+    return buildFallbackHint(context);
+  }
+
+  const baseUrl = trimTrailingSlashes(options?.baseUrl || 'https://openrouter.ai/api/v1');
+  const model = resolveFlashModel(options?.model);
+  const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+  const userContent = buildUserContent(clean, context);
 
   try {
     const res = await fetch(endpoint, {
@@ -91,7 +97,7 @@ ${cbtStr || '（通用倾听与共情）'}
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userContent },
         ],
         temperature: 0.2,
@@ -100,19 +106,13 @@ ${cbtStr || '（通用倾听与共情）'}
     });
 
     if (!res.ok) {
-      if (context.cbtHints && context.cbtHints.length > 0) {
-        return { cognitiveHint: cleanCognitiveHint(context.cbtHints[0]) };
-      }
-      return null;
+      return buildFallbackHint(context);
     }
 
     const data: any = await res.json();
     const rawContent = data?.choices?.[0]?.message?.content || '';
-    let cognitiveHint = cleanCognitiveHint(rawContent);
-
-    if (!cognitiveHint && context.cbtHints?.[0]) {
-      cognitiveHint = cleanCognitiveHint(context.cbtHints[0]);
-    }
+    const cognitiveHint =
+      cleanCognitiveHint(rawContent) || cleanCognitiveHint(context.cbtHints?.[0] || '');
 
     return {
       cognitiveHint,
@@ -120,9 +120,6 @@ ${cbtStr || '（通用倾听与共情）'}
       coreConcern: context.situationalMemory?.coreConcerns?.[0] || undefined,
     };
   } catch {
-    if (context.cbtHints && context.cbtHints.length > 0) {
-      return { cognitiveHint: cleanCognitiveHint(context.cbtHints[0]) };
-    }
-    return null;
+    return buildFallbackHint(context);
   }
 }
