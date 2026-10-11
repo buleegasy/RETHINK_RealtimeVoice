@@ -29,6 +29,18 @@ const CBT_STAGES = [
   },
 ];
 
+function getValenceTextColor(valence: number): string {
+  if (valence < -0.3) return 'text-rose-400';
+  if (valence > 0.3) return 'text-emerald-400';
+  return 'text-amber-400';
+}
+
+function getValenceBarColor(valence: number): string {
+  if (valence < -0.3) return 'bg-rose-500';
+  if (valence > 0.3) return 'bg-emerald-500';
+  return 'bg-cyan-500';
+}
+
 export const CbtFsmDiagnosticsPanel: React.FC = () => {
   const cbtFsmState = useTelemetryStore((s) => s.cbtFsmState);
   const activeCbtStage = useTelemetryStore((s) => s.activeCbtStage);
@@ -120,15 +132,7 @@ export const CbtFsmDiagnosticsPanel: React.FC = () => {
         <div>
           <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
             <span>情绪效价 (Valence)</span>
-            <span
-              className={`font-bold ${
-                valence < -0.3
-                  ? 'text-rose-400'
-                  : valence > 0.3
-                    ? 'text-emerald-400'
-                    : 'text-amber-400'
-              }`}
-            >
+            <span className={`font-bold ${getValenceTextColor(valence)}`}>
               {valence.toFixed(2)}
             </span>
           </div>
@@ -139,9 +143,7 @@ export const CbtFsmDiagnosticsPanel: React.FC = () => {
               title="锁定阈值 (-0.3)"
             />
             <div
-              className={`h-full transition-all duration-150 ${
-                valence < -0.3 ? 'bg-rose-500' : valence > 0.3 ? 'bg-emerald-500' : 'bg-cyan-500'
-              }`}
+              className={`h-full transition-all duration-150 ${getValenceBarColor(valence)}`}
               style={{ width: `${valencePct}%` }}
             />
           </div>
@@ -220,9 +222,9 @@ export const CbtFsmDiagnosticsPanel: React.FC = () => {
 
         <div className="flex-1 min-h-0 overflow-y-auto mt-1.5 space-y-1">
           {cbtFsmState.history && cbtFsmState.history.length > 0 ? (
-            cbtFsmState.history.map((record, idx) => (
+            cbtFsmState.history.map((record) => (
               <div
-                key={idx}
+                key={`${record.from}-${record.to}-${record.timestamp}`}
                 className="p-1.5 rounded bg-slate-900/60 border border-slate-800 text-[10px] flex items-center justify-between"
               >
                 <div className="flex items-center gap-1.5">

@@ -2,6 +2,17 @@ import React from 'react';
 import { Radio, Sliders, Volume2, Zap } from 'lucide-react';
 import { useTelemetryStore } from '../../../store/telemetryStore';
 
+function getJitterFillColor(bufferedMs: number, targetSec: number, rebufferSec: number): string {
+  if (bufferedMs >= Math.round(targetSec * 1000)) return 'bg-emerald-500';
+  if (bufferedMs >= Math.round(rebufferSec * 1000)) return 'bg-cyan-500';
+  return 'bg-amber-500';
+}
+
+function getAudioBitrateLabel(bitrate?: number): string {
+  if (bitrate && bitrate > 0) return `${bitrate} kbps`;
+  return '32 kbps';
+}
+
 export const AcousticDiagnosticsPanel: React.FC = () => {
   const jitter = useTelemetryStore((s) => s.jitter);
   const inputAudioLevel = useTelemetryStore((s) => s.inputAudioLevel);
@@ -44,13 +55,11 @@ export const AcousticDiagnosticsPanel: React.FC = () => {
             </div>
             <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800 p-0.5">
               <div
-                className={`h-full rounded-full transition-all duration-100 ${
-                  jitter.bufferedMs >= Math.round(jitter.targetSec * 1000)
-                    ? 'bg-emerald-500'
-                    : jitter.bufferedMs >= Math.round(jitter.rebufferSec * 1000)
-                      ? 'bg-cyan-500'
-                      : 'bg-amber-500'
-                }`}
+                className={`h-full rounded-full transition-all duration-100 ${getJitterFillColor(
+                  jitter.bufferedMs,
+                  jitter.targetSec,
+                  jitter.rebufferSec,
+                )}`}
                 style={{
                   width: `${Math.min(
                     100,
@@ -86,7 +95,7 @@ export const AcousticDiagnosticsPanel: React.FC = () => {
               </span>
               <span className="font-bold text-slate-200">
                 {activeTransport === 'webrtc'
-                  ? `${webRtcStats.audioBitrateKbps ? `${webRtcStats.audioBitrateKbps} kbps` : '32 kbps'}`
+                  ? getAudioBitrateLabel(webRtcStats.audioBitrateKbps)
                   : `${jitter.scheduledCount} 轨`}
               </span>
             </div>

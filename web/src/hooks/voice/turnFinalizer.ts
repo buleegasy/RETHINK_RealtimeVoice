@@ -78,7 +78,7 @@ export function finalizeUserTurn(
             });
 
             const currentShadow = useTelemetryStore.getState().latestShadowDirective;
-            if (!currentShadow || currentShadow.userText !== cleanText) {
+            if (currentShadow?.userText !== cleanText) {
               useTelemetryStore.getState().addShadowDirective({
                 turnSequence: useTelemetryStore.getState().turnCount + 1,
                 userText: cleanText,

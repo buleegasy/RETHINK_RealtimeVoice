@@ -12,6 +12,22 @@ const PRESET_QUERIES = [
   { label: '拖延瘫痪', text: '不想学学不进去作业太多烦躁做不完' },
 ];
 
+function getSourceBadgeClass(source?: string): string {
+  if (source === 'live_shadow') {
+    return 'border-indigo-800/60 bg-indigo-950 text-indigo-300';
+  }
+  if (source === 'live_tool') {
+    return 'border-emerald-800/60 bg-emerald-950 text-emerald-300';
+  }
+  return 'border-cyan-800/60 bg-cyan-950 text-cyan-300';
+}
+
+function getSourceBadgeLabel(source?: string): string {
+  if (source === 'live_shadow') return '影子注入';
+  if (source === 'live_tool') return '工具调用';
+  return '沙盒评测';
+}
+
 export const RagDiagnosticsPanel: React.FC = () => {
   const ragRetrievals = useTelemetryStore((s) => s.ragRetrievals);
   const addRagRetrieval = useTelemetryStore((s) => s.addRagRetrieval);
@@ -81,7 +97,7 @@ export const RagDiagnosticsPanel: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setSandboxInput(p.text);
-                  handleRunSandboxQuery(p.text);
+                  void handleRunSandboxQuery(p.text);
                 }}
                 className="text-[10px] px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition cursor-pointer"
               >
@@ -96,13 +112,17 @@ export const RagDiagnosticsPanel: React.FC = () => {
               type="text"
               value={sandboxInput}
               onChange={(e) => setSandboxInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleRunSandboxQuery(sandboxInput)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  void handleRunSandboxQuery(sandboxInput);
+                }
+              }}
               placeholder="输入来访学生诉求（回车快速检索）..."
               className="flex-1 bg-slate-950 border border-slate-800 rounded px-2.5 h-7 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60"
             />
             <button
               type="button"
-              onClick={() => handleRunSandboxQuery(sandboxInput)}
+              onClick={() => void handleRunSandboxQuery(sandboxInput)}
               disabled={isSearching || !sandboxInput.trim()}
               className="flex items-center gap-1 px-2.5 h-7 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
@@ -126,10 +146,11 @@ export const RagDiagnosticsPanel: React.FC = () => {
         <div className="flex-1 min-h-0 overflow-y-auto mt-2 space-y-1.5">
           {ragRetrievals.length > 0 ? (
             ragRetrievals.map((item) => (
-              <div
+              <button
                 key={item.id}
+                type="button"
                 onClick={() => setSelectedLog(item)}
-                className={`p-2 rounded border text-xs cursor-pointer transition ${
+                className={`w-full text-left p-2 rounded border text-xs cursor-pointer transition ${
                   selectedLog?.id === item.id
                     ? 'bg-indigo-950/40 border-indigo-700/60'
                     : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
@@ -138,19 +159,9 @@ export const RagDiagnosticsPanel: React.FC = () => {
                 <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
                   <div className="flex items-center gap-1.5">
                     <span
-                      className={`px-1 py-0.2 rounded border ${
-                        item.source === 'live_shadow'
-                          ? 'border-indigo-800/60 bg-indigo-950 text-indigo-300'
-                          : item.source === 'live_tool'
-                            ? 'border-emerald-800/60 bg-emerald-950 text-emerald-300'
-                            : 'border-cyan-800/60 bg-cyan-950 text-cyan-300'
-                      }`}
+                      className={`px-1 py-0.2 rounded border ${getSourceBadgeClass(item.source)}`}
                     >
-                      {item.source === 'live_shadow'
-                        ? '影子注入'
-                        : item.source === 'live_tool'
-                          ? '工具调用'
-                          : '沙盒评测'}
+                      {getSourceBadgeLabel(item.source)}
                     </span>
                     {item.turnSequence ? <span>#轮次 {item.turnSequence}</span> : null}
                   </div>
@@ -192,7 +203,7 @@ export const RagDiagnosticsPanel: React.FC = () => {
                     <span>禁语: {item.tabooPhrases.slice(0, 2).join(' / ')}</span>
                   </div>
                 )}
-              </div>
+              </button>
             ))
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs py-6">
@@ -247,22 +258,26 @@ export const RagDiagnosticsPanel: React.FC = () => {
         </div>
 
         <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-32 overflow-y-auto font-sans">
-          {filteredCapsules.map((cap) => (
-            <div
-              key={cap.id}
-              onClick={() => {
-                setSandboxInput(cap.keywords?.[0] || cap.title);
-                handleRunSandboxQuery(cap.keywords?.[0] || cap.title);
-              }}
-              className="p-1 rounded bg-slate-900/60 border border-slate-800 hover:border-cyan-800 text-[10px] cursor-pointer transition flex items-center gap-1.5"
-              title="点击在沙盒中测试此胶囊"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <span className="text-slate-200 truncate block">{cap.title}</span>
-              </div>
-            </div>
-          ))}
+          {filteredCapsules.map((cap) => {
+            const queryTarget = cap.keywords?.[0] || cap.title;
+            return (
+              <button
+                key={cap.id}
+                type="button"
+                onClick={() => {
+                  setSandboxInput(queryTarget);
+                  void handleRunSandboxQuery(queryTarget);
+                }}
+                className="w-full text-left p-1 rounded bg-slate-900/60 border border-slate-800 hover:border-cyan-800 text-[10px] cursor-pointer transition flex items-center gap-1.5"
+                title="点击在沙盒中测试此胶囊"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-slate-200 truncate block">{cap.title}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

@@ -2,6 +2,24 @@ import React from 'react';
 import { BookOpen, Cpu, Radio, Sliders, Zap } from 'lucide-react';
 import { useTelemetryStore } from '../../store/telemetryStore';
 
+function getShadowStatusLabel(isLocked: boolean, lastShadowDurationMs: number): string {
+  if (isLocked) return '负向锁定';
+  if (lastShadowDurationMs > 0) return '动态指导';
+  return '直通预载';
+}
+
+function getJitterBadgeClass(isConnected: boolean, isBuffering: boolean): string {
+  if (!isConnected) return 'border-slate-800 bg-slate-900 text-slate-500';
+  if (isBuffering) return 'border-amber-800/60 bg-amber-950/60 text-amber-300';
+  return 'border-emerald-800/60 bg-emerald-950/60 text-emerald-300';
+}
+
+function getJitterStatusLabel(isConnected: boolean, isBuffering: boolean): string {
+  if (!isConnected) return '待机';
+  if (isBuffering) return '蓄水中';
+  return '流式播发';
+}
+
 export const TelemetryKpiStrip: React.FC = () => {
   const {
     rttMs,
@@ -118,7 +136,7 @@ export const TelemetryKpiStrip: React.FC = () => {
                 : 'border-indigo-800/60 bg-indigo-950/60 text-indigo-300'
             }`}
           >
-            {isLocked ? '负向锁定' : lastShadowDurationMs > 0 ? '动态指导' : '直通预载'}
+            {getShadowStatusLabel(isLocked, lastShadowDurationMs)}
           </span>
         </div>
         <div className="flex items-center justify-between text-[10px] text-slate-500">
@@ -169,15 +187,12 @@ export const TelemetryKpiStrip: React.FC = () => {
             /{Math.round((jitter.targetSec || 0.04) * 1000)}ms
           </span>
           <span
-            className={`ml-auto text-[9px] px-1.5 py-0.2 rounded border ${
-              !isConnected
-                ? 'border-slate-800 bg-slate-900 text-slate-500'
-                : jitter.isBuffering
-                  ? 'border-amber-800/60 bg-amber-950/60 text-amber-300'
-                  : 'border-emerald-800/60 bg-emerald-950/60 text-emerald-300'
-            }`}
+            className={`ml-auto text-[9px] px-1.5 py-0.2 rounded border ${getJitterBadgeClass(
+              isConnected,
+              jitter.isBuffering,
+            )}`}
           >
-            {!isConnected ? '待机' : jitter.isBuffering ? '蓄水中' : '流式播发'}
+            {getJitterStatusLabel(isConnected, jitter.isBuffering)}
           </span>
         </div>
         <div className="flex items-center gap-2">

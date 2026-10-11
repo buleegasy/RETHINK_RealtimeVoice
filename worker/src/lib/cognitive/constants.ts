@@ -39,3 +39,11 @@ export function parseJsonSafe<T = any>(raw: string): T {
   }
   return {} as T;
 }
+
+export function trimTrailingSlashes(url: string): string {
+  let result = (url || '').trim();
+  while (result.endsWith('/')) {
+    result = result.slice(0, -1);
+  }
+  return result;
+}

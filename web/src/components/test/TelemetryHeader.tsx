@@ -21,6 +21,18 @@ interface TelemetryHeaderProps {
   onToggleMute: () => void;
 }
 
+function getSessionStatusDotClass(isConnected: boolean, sessionStatus: string): string {
+  if (isConnected) return 'bg-emerald-400';
+  if (sessionStatus === 'connecting') return 'bg-amber-400 animate-pulse';
+  return 'bg-slate-600';
+}
+
+function getSessionStatusText(isConnected: boolean, sessionStatus: string): string {
+  if (isConnected) return '已连接';
+  if (sessionStatus === 'connecting') return '协商中';
+  return '就绪';
+}
+
 export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
   onStartCall,
   onEndCall,
@@ -104,17 +116,12 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
 
         <div className="flex items-center gap-1.5 text-slate-400 text-[11px] shrink-0">
           <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              isConnected
-                ? 'bg-emerald-400'
-                : sessionStatus === 'connecting'
-                  ? 'bg-amber-400 animate-pulse'
-                  : 'bg-slate-600'
-            }`}
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${getSessionStatusDotClass(
+              isConnected,
+              sessionStatus,
+            )}`}
           />
-          <span className="text-slate-300">
-            {isConnected ? '已连接' : sessionStatus === 'connecting' ? '协商中' : '就绪'}
-          </span>
+          <span className="text-slate-300">{getSessionStatusText(isConnected, sessionStatus)}</span>
         </div>
 
         <div className="h-3 w-px bg-slate-800 shrink-0" />

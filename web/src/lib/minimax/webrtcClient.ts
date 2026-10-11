@@ -105,7 +105,7 @@ export class MiniMaxWebRtcClient {
   }
 
   public sendEvent(event: Record<string, unknown>): boolean {
-    if (!this.dc || this.dc.readyState !== 'open') {
+    if (this.dc?.readyState !== 'open') {
       return false;
     }
     try {
@@ -242,6 +242,74 @@ export class MiniMaxWebRtcClient {
     }
   }
 
+  private handleCandidatePairReport(report: any): void {
+    const isNominated =
+      report.state === 'succeeded' || report.nominated === true || report.selected === true;
+    if (report.type === 'candidate-pair' && isNominated) {
+      const rawRtt = report.currentRoundTripTime;
+      if (typeof rawRtt === 'number' && rawRtt > 0) {
+        useTelemetryStore.getState().updateRtt(Math.round(rawRtt * 1000));
+      }
+    }
+  }
+
+  private calculateBufferDelay(report: any): number {
+    if (
+      typeof report.jitterBufferDelay === 'number' &&
+      typeof report.jitterBufferEmittedCount === 'number' &&
+      report.jitterBufferEmittedCount > 0
+    ) {
+      return Math.round((report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000);
+    }
+    const jitterSec = typeof report.jitter === 'number' ? report.jitter : 0;
+    const jitterMs = Math.round(jitterSec * 1000);
+    return jitterMs > 0 ? jitterMs : 18;
+  }
+
+  private calculateBitrate(bytesReceived: unknown): number {
+    if (typeof bytesReceived !== 'number') return 32;
+    let bitrateKbps = 32;
+    const now = Date.now();
+    if (this.lastStatsTime > 0 && this.lastBytesReceived !== null) {
+      const dtSec = (now - this.lastStatsTime) / 1000;
+      if (dtSec > 0.1) {
+        const dBytes = bytesReceived - this.lastBytesReceived;
+        bitrateKbps = Math.max(0, Math.round((dBytes * 8) / (dtSec * 1000)));
+      }
+    }
+    this.lastBytesReceived = bytesReceived;
+    this.lastStatsTime = now;
+    return bitrateKbps > 0 ? bitrateKbps : 32;
+  }
+
+  private handleInboundRtpReport(report: any): void {
+    const isAudio = report.kind === 'audio' || report.mediaType === 'audio';
+    if (report.type !== 'inbound-rtp' || !isAudio) return;
+
+    const bufferDelayMs = this.calculateBufferDelay(report);
+    const packetsLost = typeof report.packetsLost === 'number' ? report.packetsLost : 0;
+    const packetsReceived = typeof report.packetsReceived === 'number' ? report.packetsReceived : 0;
+    const bitrateKbps = this.calculateBitrate(report.bytesReceived);
+
+    useTelemetryStore.getState().updateJitterMetrics({
+      bufferedSec: Number((bufferDelayMs / 1000).toFixed(3)),
+      bufferedMs: bufferDelayMs,
+      isBuffering: false,
+      queuedBuffers: Math.max(1, Math.round(bufferDelayMs / 20)),
+      scheduledCount: packetsReceived,
+      targetSec: 0.04,
+      rebufferSec: 0.02,
+    });
+
+    useTelemetryStore.getState().updateWebRtcStats({
+      connectionState: this.pc?.connectionState || 'connected',
+      iceConnectionState: this.pc?.iceConnectionState || 'connected',
+      dataChannelState: this.dc?.readyState || 'open',
+      packetsLost,
+      audioBitrateKbps: bitrateKbps,
+    });
+  }
+
   private startStatsMonitor(): void {
     if (this.statsTimer || !this.pc) return;
     this.statsTimer = setInterval(async () => {
@@ -249,75 +317,8 @@ export class MiniMaxWebRtcClient {
       try {
         const stats = await this.pc.getStats();
         stats.forEach((report: any) => {
-          if (
-            report.type === 'candidate-pair' &&
-            (report.state === 'succeeded' || report.nominated === true || report.selected === true)
-          ) {
-            const rawRtt = report.currentRoundTripTime;
-            if (typeof rawRtt === 'number' && rawRtt > 0) {
-              const rttMs = Math.round(rawRtt * 1000);
-              useTelemetryStore.getState().updateRtt(rttMs);
-            }
-          }
-
-          if (
-            report.type === 'inbound-rtp' &&
-            (report.kind === 'audio' || report.mediaType === 'audio')
-          ) {
-            const jitterSec = typeof report.jitter === 'number' ? report.jitter : 0;
-            const jitterMs = Math.round(jitterSec * 1000);
-
-            let bufferDelayMs = 0;
-            if (
-              typeof report.jitterBufferDelay === 'number' &&
-              typeof report.jitterBufferEmittedCount === 'number' &&
-              report.jitterBufferEmittedCount > 0
-            ) {
-              bufferDelayMs = Math.round(
-                (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000,
-              );
-            } else if (jitterMs > 0) {
-              bufferDelayMs = jitterMs;
-            } else {
-              bufferDelayMs = 18;
-            }
-
-            const packetsLost = typeof report.packetsLost === 'number' ? report.packetsLost : 0;
-            const packetsReceived =
-              typeof report.packetsReceived === 'number' ? report.packetsReceived : 0;
-
-            let bitrateKbps = 32;
-            const now = Date.now();
-            if (typeof report.bytesReceived === 'number') {
-              if (this.lastStatsTime > 0 && this.lastBytesReceived !== null) {
-                const dtSec = (now - this.lastStatsTime) / 1000;
-                if (dtSec > 0.1) {
-                  const dBytes = report.bytesReceived - this.lastBytesReceived;
-                  bitrateKbps = Math.max(0, Math.round((dBytes * 8) / (dtSec * 1000)));
-                }
-              }
-              this.lastBytesReceived = report.bytesReceived;
-              this.lastStatsTime = now;
-            }
-
-            useTelemetryStore.getState().updateJitterMetrics({
-              bufferedSec: Number((bufferDelayMs / 1000).toFixed(3)),
-              bufferedMs: bufferDelayMs,
-              isBuffering: false,
-              queuedBuffers: Math.max(1, Math.round(bufferDelayMs / 20)),
-              scheduledCount: packetsReceived,
-              targetSec: 0.04,
-              rebufferSec: 0.02,
-            });
-
-            useTelemetryStore.getState().updateWebRtcStats({
-              connectionState: this.pc?.connectionState || 'connected',
-              iceConnectionState: this.pc?.iceConnectionState || 'connected',
-              dataChannelState: this.dc?.readyState || 'open',
-              packetsLost,
-              audioBitrateKbps: bitrateKbps > 0 ? bitrateKbps : 32,
-            });
-          }
+          this.handleCandidatePairReport(report);
+          this.handleInboundRtpReport(report);
         });
       } catch {}
     }, 400);

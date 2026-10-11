@@ -1,5 +1,10 @@
 import type { FlashOptions, StructuredSessionReport } from './types';
-import { MINIMAX_API_URL, resolveReportingModel, parseJsonSafe } from './constants';
+import {
+  MINIMAX_API_URL,
+  resolveReportingModel,
+  parseJsonSafe,
+  trimTrailingSlashes,
+} from './constants';
 import { evaluateTranscriptRuleBased } from '../minimax-evaluator';
 
 export async function generateStructuredReportWithFlash(
@@ -17,7 +22,7 @@ export async function generateStructuredReportWithFlash(
     };
   }
 
-  const baseUrl = (options.baseUrl || MINIMAX_API_URL).replace(/\/+$/, '');
+  const baseUrl = trimTrailingSlashes(options.baseUrl || MINIMAX_API_URL);
   const model = resolveReportingModel(options.model);
   const endpoint =
     baseUrl.endsWith('/chat/completions') || baseUrl.includes('chatcompletion_v2')

@@ -1,5 +1,38 @@
 import type { FlashOptions } from './types';
-import { MINIMAX_API_URL, resolveReportingModel } from './constants';
+import { MINIMAX_API_URL, resolveReportingModel, trimTrailingSlashes } from './constants';
+
+function buildFallbackObservation(
+  crisisCount: number,
+  concernNames: string[],
+  concernStr: string,
+): string {
+  if (crisisCount > 0) {
+    return `近期校园监测到个别情绪高压个案，主要涉及${concernStr.slice(0, 12)}等生活事件，建议专职老师重点跟进，常规学生心境整体受控。`;
+  }
+  if (concernNames.length === 0 || concernStr.includes('闲聊') || concernStr.includes('日常')) {
+    return '本周学生多以轻量交流与日常寒暄为主，整体心境平和自然，未见群体性学业或情绪焦虑集聚。';
+  }
+  return `本周来访焦点主要聚焦于${concernStr.slice(0, 12)}，学生在倾诉后情绪多能得到自然舒缓与理清，校园心境总体平稳。`;
+}
+
+function buildEmotionalTone(crisisCount: number, avgValence: number): string {
+  if (crisisCount > 0) return '存在个别需线下重点关怀的突发高压事件';
+  if (avgValence >= 0.2) return '整体积极轻松';
+  if (avgValence <= -0.3) return '普遍承载一定现实压力与负重感';
+  return '整体处于常态平稳交流状态';
+}
+
+function stripOuterQuotes(raw: string): string {
+  let s = raw.trim();
+  const quotes = '"“\'‘`”’';
+  while (s.length > 0 && quotes.includes(s[0])) {
+    s = s.slice(1).trim();
+  }
+  while (s.length > 0 && quotes.includes(s[s.length - 1])) {
+    s = s.slice(0, -1).trim();
+  }
+  return s;
+}
 
 export async function generateWeeklySummaryDeepSeekV4Flash(
   stats: {
@@ -17,25 +50,21 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
 
   const concernNames = (topConcerns || []).map((c) => c.name).filter(Boolean);
   const concernStr = concernNames.length > 0 ? concernNames.join('、') : '日常闲聊与尝试';
-
-  // 客观真实的专业观察兜底（彻底去格式化，严格 20-50 字）
-  const fallback =
-    crisisCount > 0
-      ? `近期校园监测到个别情绪高压个案，主要涉及${concernStr.slice(0, 12)}等生活事件，建议专职老师重点跟进，常规学生心境整体受控。`
-      : concernNames.length === 0 || concernStr.includes('闲聊') || concernStr.includes('日常')
-        ? `本周学生多以轻量交流与日常寒暄为主，整体心境平和自然，未见群体性学业或情绪焦虑集聚。`
-        : `本周来访焦点主要聚焦于${concernStr.slice(0, 12)}，学生在倾诉后情绪多能得到自然舒缓与理清，校园心境总体平稳。`;
+  const fallback = buildFallbackObservation(crisisCount, concernNames, concernStr);
 
   if (!options?.apiKey) {
     return fallback;
   }
 
-  const baseUrl = (options.baseUrl || MINIMAX_API_URL).replace(/\/+$/, '');
+  const baseUrl = trimTrailingSlashes(options.baseUrl || MINIMAX_API_URL);
   const model = resolveReportingModel(options.model);
   const endpoint =
     baseUrl.endsWith('/chat/completions') || baseUrl.includes('chatcompletion_v2')
       ? baseUrl
       : `${baseUrl}/chat/completions`;
+
+  const emotionalTone = buildEmotionalTone(crisisCount, avgValence);
+  const activityDescription = totalSessions <= 3 ? '少量探索性进线' : '常态多频进线';
 
   const prompt = `你是经验丰富的校园心理专职督导老师。请结合本周校园倾诉的整体情况，撰写一段20-50字的大屏“本周心境与趋势观察”。
 
@@ -46,8 +75,8 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
 
 【本周倾诉背景参考】：
 - 主要涉及主题：${concernStr}
-- 情绪总体基调：${crisisCount > 0 ? '存在个别需线下重点关怀的突发高压事件' : avgValence >= 0.2 ? '整体积极轻松' : avgValence <= -0.3 ? '普遍承载一定现实压力与负重感' : '整体处于常态平稳交流状态'}
-- 倾诉样本活跃度：${totalSessions <= 3 ? '少量探索性进线' : '常态多频进线'}
+- 情绪总体基调：${emotionalTone}
+- 倾诉样本活跃度：${activityDescription}
 `;
 
   try {
@@ -72,9 +101,7 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
 
     if (res.ok) {
       const data: any = await res.json();
-      let reply = (data?.choices?.[0]?.message?.content || '')
-        .trim()
-        .replace(/^["“'‘]+|["”'’]+$/g, '');
+      const reply = stripOuterQuotes(data?.choices?.[0]?.message?.content || '');
       if (reply.length >= 18 && reply.length <= 55) {
         return reply;
       }

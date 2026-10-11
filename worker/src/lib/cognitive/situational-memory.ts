@@ -1,10 +1,13 @@
 import type { SituationalMemory, SituationRAGItem } from '../../types';
 import type { FlashOptions } from './types';
-import { MINIMAX_API_URL, resolveReportingModel, parseJsonSafe } from './constants';
+import {
+  MINIMAX_API_URL,
+  resolveReportingModel,
+  parseJsonSafe,
+  trimTrailingSlashes,
+} from './constants';
 
-export function formatSituationalMemoryPrompt(memory?: SituationalMemory | null): string {
-  if (!memory || !memory.summaryParagraph) return '';
-  const lines: string[] = ['【来访学生历史个人情景记忆档案】'];
+function appendProfileLines(lines: string[], memory: SituationalMemory): void {
   if (memory.userName) lines.push(`- 学生姓名/称呼：${memory.userName}`);
   if (memory.identityContext) lines.push(`- 身份背景：${memory.identityContext}`);
   if (memory.coreConcerns && memory.coreConcerns.length > 0) {
@@ -17,14 +20,22 @@ export function formatSituationalMemoryPrompt(memory?: SituationalMemory | null)
     lines.push(`- 近期关键事件：${memory.recentSituations.join('；')}`);
   }
   lines.push(`- 个人情景摘要：${memory.summaryParagraph}`);
-  if (memory.situations && memory.situations.length > 0) {
-    lines.push('【重点情境RAG摘要条目】');
-    for (const sit of memory.situations.slice(-3)) {
-      lines.push(
-        `* [${sit.topic}] ${sit.summary50}${sit.effectiveApproaches ? ` (应对: ${sit.effectiveApproaches})` : ''}`,
-      );
-    }
+}
+
+function appendSituationItems(lines: string[], situations?: SituationRAGItem[]): void {
+  if (!situations || situations.length === 0) return;
+  lines.push('【重点情境RAG摘要条目】');
+  for (const sit of situations.slice(-3)) {
+    const approachText = sit.effectiveApproaches ? ` (应对: ${sit.effectiveApproaches})` : '';
+    lines.push(`* [${sit.topic}] ${sit.summary50}${approachText}`);
   }
+}
+
+export function formatSituationalMemoryPrompt(memory?: SituationalMemory | null): string {
+  if (!memory || !memory.summaryParagraph) return '';
+  const lines: string[] = ['【来访学生历史个人情景记忆档案】'];
+  appendProfileLines(lines, memory);
+  appendSituationItems(lines, memory.situations);
   lines.push(
     '【记忆交互指导】\n' +
       '1. 开场问候（老朋友非首次登录）：开场时请根据上述过往档案自然接话，可以说“Hi，上次我们聊到……这类”，随性询问近况或后续进展，保持自然真诚的同伴口吻，不要太死板，严禁机械套用死板模板，控制在1句话内，说完立即保持倾听。\n' +
@@ -72,7 +83,7 @@ export async function consolidateSituationalMemoryWithLLM(
     };
   }
 
-  const baseUrl = (options?.baseUrl || MINIMAX_API_URL).replace(/\/+$/, '');
+  const baseUrl = trimTrailingSlashes(options?.baseUrl || MINIMAX_API_URL);
   const model = resolveReportingModel(options?.model);
   const endpoint =
     baseUrl.endsWith('/chat/completions') || baseUrl.includes('chatcompletion_v2')
@@ -137,70 +148,90 @@ ${existingMemory ? JSON.stringify(existingMemory) : '（无既往记忆）'}
     const data: any = await res.json();
     const raw = data?.choices?.[0]?.message?.content || '{}';
     const parsed = parseJsonSafe(raw);
-
-    const newSituations: SituationRAGItem[] = [];
-    if (Array.isArray(parsed.situations)) {
-      for (const s of parsed.situations) {
-        if (s && typeof s.topic === 'string' && typeof s.summary50 === 'string') {
-          newSituations.push({
-            situationId: `sit_${now}_${Math.random().toString(36).slice(2, 6)}`,
-            topic: s.topic.trim(),
-            summary50: s.summary50.trim(),
-            fullContext: dialogueText.slice(0, 500),
-            effectiveApproaches:
-              typeof s.effectiveApproaches === 'string' ? s.effectiveApproaches.trim() : undefined,
-            timestamp: now,
-          });
-        }
-      }
-    }
-
-    const merged = [...(existingMemory?.situations || []), ...newSituations];
-    const deduplicated: SituationRAGItem[] = [];
-    const seen = new Set<string>();
-    for (let i = merged.length - 1; i >= 0; i--) {
-      const sit = merged[i];
-      if (!seen.has(sit.topic)) {
-        seen.add(sit.topic);
-        deduplicated.unshift(sit);
-      }
-    }
-    const finalSituations = deduplicated.slice(-10);
-
-    return {
-      userId: cleanId,
-      userName:
-        typeof parsed.userName === 'string' && parsed.userName
-          ? parsed.userName
-          : existingMemory?.userName,
-      identityContext:
-        typeof parsed.identityContext === 'string' && parsed.identityContext
-          ? parsed.identityContext
-          : existingMemory?.identityContext,
-      coreConcerns:
-        Array.isArray(parsed.coreConcerns) && parsed.coreConcerns.length > 0
-          ? parsed.coreConcerns
-          : existingMemory?.coreConcerns || [],
-      significantOthers:
-        Array.isArray(parsed.significantOthers) && parsed.significantOthers.length > 0
-          ? parsed.significantOthers
-          : existingMemory?.significantOthers || [],
-      recentSituations:
-        Array.isArray(parsed.recentSituations) && parsed.recentSituations.length > 0
-          ? parsed.recentSituations
-          : existingMemory?.recentSituations || [],
-      effectiveStrategies:
-        Array.isArray(parsed.effectiveStrategies) && parsed.effectiveStrategies.length > 0
-          ? parsed.effectiveStrategies
-          : existingMemory?.effectiveStrategies || [],
-      summaryParagraph:
-        typeof parsed.summaryParagraph === 'string' && parsed.summaryParagraph
-          ? parsed.summaryParagraph
-          : existingMemory?.summaryParagraph || '学生曾进行深度心理倾诉。',
-      situations: finalSituations.length > 0 ? finalSituations : existingMemory?.situations,
-      lastUpdated: now,
-    };
+    const newSituations = parseNewSituations(parsed.situations, dialogueText, now);
+    const mergedSituations = mergeSituations(existingMemory?.situations, newSituations);
+    return buildMergedMemory(cleanId, parsed, existingMemory, mergedSituations, now);
   } catch {
     return existingMemory;
   }
+}
+
+function parseNewSituations(
+  rawSituations: unknown,
+  dialogueText: string,
+  now: number,
+): SituationRAGItem[] {
+  if (!Array.isArray(rawSituations)) return [];
+  const results: SituationRAGItem[] = [];
+  for (const s of rawSituations) {
+    if (s && typeof s.topic === 'string' && typeof s.summary50 === 'string') {
+      results.push({
+        situationId: `sit_${now}_${crypto.randomUUID().slice(0, 8)}`,
+        topic: s.topic.trim(),
+        summary50: s.summary50.trim(),
+        fullContext: dialogueText.slice(0, 500),
+        effectiveApproaches:
+          typeof s.effectiveApproaches === 'string' ? s.effectiveApproaches.trim() : undefined,
+        timestamp: now,
+      });
+    }
+  }
+  return results;
+}
+
+function mergeSituations(
+  existing?: SituationRAGItem[],
+  incoming: SituationRAGItem[] = [],
+): SituationRAGItem[] {
+  const merged = [...(existing || []), ...incoming];
+  const deduplicated: SituationRAGItem[] = [];
+  const seen = new Set<string>();
+  for (let i = merged.length - 1; i >= 0; i--) {
+    const sit = merged[i];
+    if (!seen.has(sit.topic)) {
+      seen.add(sit.topic);
+      deduplicated.unshift(sit);
+    }
+  }
+  return deduplicated.slice(-10);
+}
+
+function buildMergedMemory(
+  cleanId: string,
+  parsed: any,
+  existing: SituationalMemory | null,
+  situations: SituationRAGItem[],
+  now: number,
+): SituationalMemory {
+  return {
+    userId: cleanId,
+    userName:
+      typeof parsed.userName === 'string' && parsed.userName ? parsed.userName : existing?.userName,
+    identityContext:
+      typeof parsed.identityContext === 'string' && parsed.identityContext
+        ? parsed.identityContext
+        : existing?.identityContext,
+    coreConcerns:
+      Array.isArray(parsed.coreConcerns) && parsed.coreConcerns.length > 0
+        ? parsed.coreConcerns
+        : existing?.coreConcerns || [],
+    significantOthers:
+      Array.isArray(parsed.significantOthers) && parsed.significantOthers.length > 0
+        ? parsed.significantOthers
+        : existing?.significantOthers || [],
+    recentSituations:
+      Array.isArray(parsed.recentSituations) && parsed.recentSituations.length > 0
+        ? parsed.recentSituations
+        : existing?.recentSituations || [],
+    effectiveStrategies:
+      Array.isArray(parsed.effectiveStrategies) && parsed.effectiveStrategies.length > 0
+        ? parsed.effectiveStrategies
+        : existing?.effectiveStrategies || [],
+    summaryParagraph:
+      typeof parsed.summaryParagraph === 'string' && parsed.summaryParagraph
+        ? parsed.summaryParagraph
+        : existing?.summaryParagraph || '学生曾进行深度心理倾诉。',
+    situations: situations.length > 0 ? situations : existing?.situations,
+    lastUpdated: now,
+  };
 }

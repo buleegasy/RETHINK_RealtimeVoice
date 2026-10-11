@@ -52,7 +52,7 @@ export const RawEventsDiagnosticsPanel: React.FC = () => {
   };
 
   const handleCopyJson = () => {
-    navigator.clipboard.writeText(JSON.stringify(rawPayload, null, 2));
+    void navigator.clipboard.writeText(JSON.stringify(rawPayload, null, 2));
     setCopiedJson(true);
     setTimeout(() => setCopiedJson(false), 2000);
   };
@@ -91,7 +91,7 @@ ${shadowDirectives
   )
   .join('\n\n')}
 `;
-    navigator.clipboard.writeText(markdown);
+    void navigator.clipboard.writeText(markdown);
     setCopiedReport(true);
     setTimeout(() => setCopiedReport(false), 2000);
   };
