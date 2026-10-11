@@ -47,92 +47,85 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
   };
 
   return (
-    <header className="h-14 border-b border-slate-800 bg-[#0E1322]/90 backdrop-blur px-4 flex items-center justify-between shrink-0 z-20">
-      <div className="flex items-center gap-3">
+    <header className="h-12 border-b border-slate-800 bg-[#0B0F19] px-4 flex items-center justify-between shrink-0 z-20 font-mono select-none">
+      {/* 左侧：导航与系统品牌标识 */}
+      <div className="flex items-center gap-2.5">
         <button
           type="button"
           onClick={() => setRunMode('web')}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs transition cursor-pointer"
-          title="返回常规倾诉视图"
+          className="flex items-center gap-1 px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs transition cursor-pointer border border-slate-800"
+          title="返回常规体验"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>返回体验</span>
+          <span>返回</span>
         </button>
         <button
           type="button"
           onClick={() => setRunMode('admin')}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-600/80 hover:bg-indigo-600 text-white text-xs transition cursor-pointer"
-          title="前往心理教师管理后台"
+          className="px-2 py-1 rounded bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 hover:text-indigo-200 text-xs transition cursor-pointer border border-indigo-800/50"
+          title="教师管理后台"
         >
-          <span>教师后台</span>
+          教师后台
         </button>
-        <div className="h-4 w-[1px] bg-slate-800" />
+
+        <div className="h-3.5 w-px bg-slate-800" />
+
         <div className="flex items-center gap-2">
-          <div className="p-1 rounded bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-            <Cpu className="w-4 h-4" />
+          <div className="p-1 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+            <Cpu className="w-3.5 h-3.5" />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-sm tracking-wider bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
-              RETHINK TELEMETRY
-            </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-              LIVE-1 DIRECT · CBT EMBEDDED
-            </span>
-            <span
-              className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-                activeTransport === 'webrtc'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                  : 'bg-slate-800 text-slate-300 border-slate-700'
-              }`}
-            >
-              {activeTransport === 'webrtc' ? 'WEBRTC OPUS' : 'WS PCM16'}
-            </span>
-            <span
-              className="hidden lg:inline text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
-              title="挂机后由 DeepSeek V4 Flash 异步进行结构化建档与评估"
-            >
-              DEEPSEEK V4 FLASH EVAL
-            </span>
-          </div>
+          <span className="font-bold text-xs tracking-wider text-cyan-400">RETHINK TELEMETRY</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800">
+            LIVE-1 DIRECT · CBT EMBEDDED
+          </span>
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded border ${
+              activeTransport === 'webrtc'
+                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60'
+                : 'bg-slate-900 text-slate-400 border-slate-800'
+            }`}
+          >
+            {activeTransport === 'webrtc' ? 'WEBRTC OPUS' : 'WS PCM16'}
+          </span>
+          <span className="hidden xl:inline text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800">
+            DEEPSEEK V4 FLASH EVAL
+          </span>
         </div>
       </div>
 
-      <div className="hidden md:flex items-center gap-4 text-xs font-mono">
-        {/* 链路模式展示: 纯粹 WebRTC (UDP/Opus 直连) */}
-        <div className="flex items-center gap-1.5 bg-slate-900 border border-emerald-500/40 rounded px-2 py-1">
-          <span className="text-[10px] text-slate-400">链路:</span>
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            WebRTC (UDP/Opus 直连)
-          </span>
+      {/* 中间：链路与双工运行态指标（极简紧凑单行对齐） */}
+      <div className="hidden lg:flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px]">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-emerald-300 font-medium">WebRTC (UDP/Opus 直连)</span>
         </div>
 
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800">
+        <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
           <span
-            className={`w-2 h-2 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-full ${
               isConnected
-                ? 'bg-emerald-500 animate-pulse'
+                ? 'bg-emerald-400'
                 : sessionStatus === 'connecting'
-                  ? 'bg-amber-500 animate-pulse'
-                  : 'bg-slate-500'
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-slate-600'
             }`}
           />
           <span className="text-slate-300">
-            {isConnected
-              ? `${activeTransport === 'webrtc' ? 'WebRTC 全双工通道' : 'WebSocket 全双工网关'}已连接`
-              : sessionStatus === 'connecting'
-                ? '正在协商链路...'
-                : '网关就绪 (待机)'}
+            {isConnected ? '已连接' : sessionStatus === 'connecting' ? '协商中' : '就绪'}
           </span>
         </div>
 
-        <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-slate-900 border border-slate-800">
-          <span className="text-slate-400">阶段:</span>
+        <div className="h-3 w-px bg-slate-800" />
+
+        <div className="flex items-center gap-1 text-[11px]">
+          <span className="text-slate-500">阶段</span>
           <span className="text-cyan-400 font-semibold">{activeCbtStage}</span>
         </div>
 
-        <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-slate-900 border border-slate-800">
-          <span className="text-slate-400">双工态:</span>
+        <div className="h-3 w-px bg-slate-800" />
+
+        <div className="flex items-center gap-1 text-[11px]">
+          <span className="text-slate-500">双工</span>
           <span
             className={`font-semibold ${
               duplexPhase === 'speaking'
@@ -141,65 +134,68 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
                   ? 'text-amber-400'
                   : duplexPhase === 'listening'
                     ? 'text-cyan-400'
-                    : 'text-slate-400'
+                    : 'text-slate-500'
             }`}
           >
             {duplexPhase === 'speaking'
-              ? 'AI 播报中'
+              ? '播报'
               : duplexPhase === 'thinking'
-                ? '模型流式生成'
+                ? '生成'
                 : duplexPhase === 'listening'
-                  ? '监听倾听中'
+                  ? '倾听'
                   : '待机'}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-slate-300">
+        <div className="h-3 w-px bg-slate-800" />
+
+        <div className="flex items-center gap-1 text-slate-300 text-[11px]">
           <Activity className="w-3.5 h-3.5 text-cyan-400" />
           <span>{formatDuration(callDuration)}</span>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* 右侧：动作控制按键（统一高度 h-7.5，对齐） */}
+      <div className="flex items-center gap-1.5">
         <button
           type="button"
           onClick={clearTelemetry}
           className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition cursor-pointer"
           title="清空遥测历史"
         >
-          <RotateCcw className="w-4 h-4" />
+          <RotateCcw className="w-3.5 h-3.5" />
         </button>
 
         <button
           type="button"
           onClick={onToggleMute}
           disabled={!isCallActive}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded text-xs transition cursor-pointer border ${
+          className={`flex items-center gap-1 px-2.5 h-7.5 rounded text-xs transition cursor-pointer border ${
             isMuted
-              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+              ? 'bg-rose-950/60 text-rose-300 border-rose-800/60 hover:bg-rose-900/60'
+              : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
           } disabled:opacity-40 disabled:cursor-not-allowed`}
         >
           {isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">{isMuted ? '已静音' : '静音'}</span>
+          <span>{isMuted ? '已静音' : '静音'}</span>
         </button>
 
         <button
           type="button"
           onClick={onInterrupt}
           disabled={!isCallActive || duplexPhase !== 'speaking'}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex items-center gap-1 px-2.5 h-7.5 rounded text-xs bg-amber-950/40 hover:bg-amber-900/50 text-amber-300 border border-amber-800/60 transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
           title="立即打断 AI 当前播报 (Barge-In)"
         >
           <Zap className="w-3.5 h-3.5 text-amber-400" />
-          <span className="hidden sm:inline">打断</span>
+          <span>打断</span>
         </button>
 
         {!isCallActive ? (
           <button
             type="button"
             onClick={onStartCall}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition cursor-pointer shadow-lg shadow-emerald-900/30 active:scale-95"
+            className="flex items-center gap-1.5 px-3 h-7.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm shadow-emerald-950"
           >
             <Phone className="w-3.5 h-3.5" />
             <span>启动通话</span>
@@ -208,10 +204,10 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
           <button
             type="button"
             onClick={onEndCall}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition cursor-pointer shadow-lg shadow-rose-900/30 active:scale-95"
+            className="flex items-center gap-1.5 px-3 h-7.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm shadow-rose-950"
           >
             <PhoneOff className="w-3.5 h-3.5" />
-            <span>{sessionStatus === 'connecting' ? '取消连接' : '挂机'}</span>
+            <span>{sessionStatus === 'connecting' ? '取消' : '挂机'}</span>
           </button>
         )}
       </div>
