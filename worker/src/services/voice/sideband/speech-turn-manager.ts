@@ -41,20 +41,22 @@ export class SpeechTurnManager {
 
   public recordUserTurn(trimmed: string): boolean {
     const lastTurn = this.dialogueHistory.at(-1);
-    if (
-      lastTurn &&
-      lastTurn.role === 'user' &&
-      (lastTurn.content === trimmed || lastTurn.content.includes(trimmed))
-    ) {
-      return false;
-    }
-    if (lastTurn && lastTurn.role === 'user' && trimmed.startsWith(lastTurn.content)) {
-      lastTurn.content = trimmed;
-      return false;
-    }
-    if (lastTurn && lastTurn.role === 'user' && !this.assistantSpeechBuffer.trim()) {
-      lastTurn.content = `${lastTurn.content}${trimmed.startsWith('，') || trimmed.startsWith('。') || trimmed.startsWith(',') ? '' : '，'}${trimmed}`;
-      return false;
+    if (lastTurn?.role === 'user') {
+      if (lastTurn.content === trimmed || lastTurn.content.includes(trimmed)) {
+        return false;
+      }
+      if (trimmed.startsWith(lastTurn.content)) {
+        lastTurn.content = trimmed;
+        return false;
+      }
+      if (!this.assistantSpeechBuffer.trim()) {
+        const separator =
+          trimmed.startsWith('，') || trimmed.startsWith('。') || trimmed.startsWith(',')
+            ? ''
+            : '，';
+        lastTurn.content = `${lastTurn.content}${separator}${trimmed}`;
+        return false;
+      }
     }
 
     this.dialogueHistory.push({ role: 'user', content: trimmed });
