@@ -1,17 +1,5 @@
 import type { FlashOptions, ShadowReasoningContext, ShadowReasoningResult } from './types';
-import { resolveFlashModel } from './constants';
-
-function stripWrappingQuotes(raw: string): string {
-  let s = raw.trim();
-  const quotes = '"“\'‘`”’';
-  while (s.length > 0 && quotes.includes(s[0])) {
-    s = s.slice(1).trim();
-  }
-  while (s.length > 0 && quotes.includes(s[s.length - 1])) {
-    s = s.slice(0, -1).trim();
-  }
-  return s;
-}
+import { resolveFlashModel, stripWrappingQuotes } from './constants';
 
 function cleanCognitiveHint(raw: string): string {
   if (!raw) return '';

@@ -14,7 +14,6 @@ export class SlidingWindowCompressor implements IContextManager {
 
   public estimateTokens(input: string | DialogueTurn[]): number {
     if (typeof input === 'string') {
-
       return Math.ceil(input.length * 0.7);
     }
     const combined = input.map((t) => `${t.role}: ${t.content}`).join('\n');
@@ -23,7 +22,7 @@ export class SlidingWindowCompressor implements IContextManager {
 
   public async compress(
     turns: DialogueTurn[],
-    options?: ContextCompressionOptions
+    options?: ContextCompressionOptions,
   ): Promise<CompressionResult> {
     const budget = options?.tokenBudget ?? this.defaultBudget;
     const keepLast = options?.keepLastTurns ?? this.defaultKeepLastTurns;
@@ -54,7 +53,7 @@ export class SlidingWindowCompressor implements IContextManager {
       id: `compressed_summary_${Date.now()}`,
       role: 'system',
       content: `[前期倾诉要点摘要]\n${summaryBlock}`,
-      timestamp: turnsToCompress[turnsToCompress.length - 1]?.timestamp || Date.now(),
+      timestamp: turnsToCompress.at(-1)?.timestamp || Date.now(),
     };
 
     const finalTurns: DialogueTurn[] = [];
@@ -83,8 +82,12 @@ export class SlidingWindowCompressor implements IContextManager {
       .map((t) => t.content.trim())
       .filter(Boolean);
 
-    const keyUserThemes = userUtterances.slice(0, 3).map((u, i) => `· 核心困扰${i + 1}: ${u.slice(0, 35)}...`);
-    const keyCounselingPoints = assistantUtterances.slice(0, 2).map((a, i) => `· 干预切入${i + 1}: ${a.slice(0, 30)}...`);
+    const keyUserThemes = userUtterances
+      .slice(0, 3)
+      .map((u, i) => `· 核心困扰${i + 1}: ${u.slice(0, 35)}...`);
+    const keyCounselingPoints = assistantUtterances
+      .slice(0, 2)
+      .map((a, i) => `· 干预切入${i + 1}: ${a.slice(0, 30)}...`);
 
     return [
       `包含前序 ${turns.length} 回合的倾诉沉淀：`,

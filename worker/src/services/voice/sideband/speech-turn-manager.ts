@@ -40,7 +40,7 @@ export class SpeechTurnManager {
   }
 
   public recordUserTurn(trimmed: string): boolean {
-    const lastTurn = this.dialogueHistory[this.dialogueHistory.length - 1];
+    const lastTurn = this.dialogueHistory.at(-1);
     if (
       lastTurn &&
       lastTurn.role === 'user' &&

@@ -47,3 +47,15 @@ export function trimTrailingSlashes(url: string): string {
   }
   return result;
 }
+
+export function stripWrappingQuotes(raw: string): string {
+  let s = (raw || '').trim();
+  const quotes = '"“\'‘`”’';
+  while (s.length > 0 && quotes.includes(s.charAt(0))) {
+    s = s.slice(1).trim();
+  }
+  while (s.length > 0 && quotes.includes(s.at(-1) || '')) {
+    s = s.slice(0, -1).trim();
+  }
+  return s;
+}

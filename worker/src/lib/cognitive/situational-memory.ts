@@ -32,7 +32,7 @@ function appendSituationItems(lines: string[], situations?: SituationRAGItem[]):
 }
 
 export function formatSituationalMemoryPrompt(memory?: SituationalMemory | null): string {
-  if (!memory || !memory.summaryParagraph) return '';
+  if (!memory?.summaryParagraph) return '';
   const lines: string[] = ['【来访学生历史个人情景记忆档案】'];
   appendProfileLines(lines, memory);
   appendSituationItems(lines, memory.situations);

@@ -1,5 +1,10 @@
 import type { FlashOptions } from './types';
-import { MINIMAX_API_URL, resolveReportingModel, trimTrailingSlashes } from './constants';
+import {
+  MINIMAX_API_URL,
+  resolveReportingModel,
+  trimTrailingSlashes,
+  stripWrappingQuotes,
+} from './constants';
 
 function buildFallbackObservation(
   crisisCount: number,
@@ -20,18 +25,6 @@ function buildEmotionalTone(crisisCount: number, avgValence: number): string {
   if (avgValence >= 0.2) return '整体积极轻松';
   if (avgValence <= -0.3) return '普遍承载一定现实压力与负重感';
   return '整体处于常态平稳交流状态';
-}
-
-function stripOuterQuotes(raw: string): string {
-  let s = raw.trim();
-  const quotes = '"“\'‘`”’';
-  while (s.length > 0 && quotes.includes(s[0])) {
-    s = s.slice(1).trim();
-  }
-  while (s.length > 0 && quotes.includes(s[s.length - 1])) {
-    s = s.slice(0, -1).trim();
-  }
-  return s;
 }
 
 export async function generateWeeklySummaryDeepSeekV4Flash(
@@ -101,7 +94,7 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
 
     if (res.ok) {
       const data: any = await res.json();
-      const reply = stripOuterQuotes(data?.choices?.[0]?.message?.content || '');
+      const reply = stripWrappingQuotes(data?.choices?.[0]?.message?.content || '');
       if (reply.length >= 18 && reply.length <= 55) {
         return reply;
       }
