@@ -18,6 +18,7 @@ export const TelemetryKpiStrip: React.FC = () => {
     cbtFsmState,
     activeCbtStage,
     ragRetrievals,
+    isConnected,
   } = useTelemetryStore();
 
   const getRttStatusColor = (ms: number) => {
@@ -167,12 +168,14 @@ export const TelemetryKpiStrip: React.FC = () => {
           </span>
           <span
             className={`ml-auto text-[9px] px-1.5 py-0.2 rounded border ${
-              jitter.isBuffering
-                ? 'border-amber-800/60 bg-amber-950/60 text-amber-300'
-                : 'border-emerald-800/60 bg-emerald-950/60 text-emerald-300'
+              !isConnected
+                ? 'border-slate-800 bg-slate-900 text-slate-500'
+                : jitter.isBuffering
+                  ? 'border-amber-800/60 bg-amber-950/60 text-amber-300'
+                  : 'border-emerald-800/60 bg-emerald-950/60 text-emerald-300'
             }`}
           >
-            {jitter.isBuffering ? '蓄水中' : '流式播发'}
+            {!isConnected ? '待机' : jitter.isBuffering ? '蓄水中' : '流式播发'}
           </span>
         </div>
         <div className="flex items-center gap-2">

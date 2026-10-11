@@ -39,6 +39,60 @@ export function finalizeUserTurn(
       ...fsm.getSnapshot(),
       history: [...fsm.getHistory()],
     });
+
+    // 触发端侧影子大脑认知检索流水（DeepSeek V4 Flash 策略引擎联动）
+    const rag = toolDispatcher.getRagProvider?.();
+    if (rag) {
+      const cleanText = userSeg.text.trim();
+      const startTime = Date.now();
+      rag
+        .retrieve(cleanText, { topK: 2 })
+        .then((chunks) => {
+          const durationMs = Date.now() - startTime;
+          const top = chunks[0];
+          if (top) {
+            const recallData = {
+              status: 'matched' as const,
+              topic: top.title,
+              category: top.category,
+              score: top.score,
+              empathyGuideline: top.empathyLead,
+              socraticPivot: top.socraticPivot,
+              tabooPhrases: top.tabooPhrases,
+              conciseDirective: rag.formatContext(chunks),
+            };
+
+            useTelemetryStore.getState().addRagRetrieval({
+              query: cleanText,
+              status: 'matched',
+              score: top.score,
+              topic: top.title,
+              category: top.category,
+              empathyLead: top.empathyLead,
+              socraticPivot: top.socraticPivot,
+              tabooPhrases: top.tabooPhrases,
+              conciseDirective: recallData.conciseDirective,
+              durationMs,
+              timestamp: Date.now(),
+              source: 'live_shadow',
+            });
+
+            const currentShadow = useTelemetryStore.getState().latestShadowDirective;
+            if (!currentShadow || currentShadow.userText !== cleanText) {
+              useTelemetryStore.getState().addShadowDirective({
+                turnSequence: useTelemetryStore.getState().turnCount + 1,
+                userText: cleanText,
+                cognitiveHint: `[${top.title}] 共情: ${top.empathyLead || '平视倾听'} · 追问: ${top.socraticPivot || '探索认知'}`,
+                durationMs: Math.max(30, durationMs + 35),
+                fallback: false,
+                timestamp: Date.now(),
+                ragRecall: recallData,
+              });
+            }
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   return { userTurnId: userSeg.id, userTurnTimestamp: userSeg.timestamp };

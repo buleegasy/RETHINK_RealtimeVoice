@@ -16,10 +16,13 @@ export function startSessionTimers(
 
   telemetryTimerRef.current = setInterval(() => {
     if (audioGraphRef.current) {
-      const metrics = audioGraphRef.current.getJitterMetrics();
+      const activeTransport = useTelemetryStore.getState().activeTransport;
+      if (activeTransport === 'websocket') {
+        const metrics = audioGraphRef.current.getJitterMetrics();
+        useTelemetryStore.getState().updateJitterMetrics(metrics);
+      }
       const inLvl = audioGraphRef.current.getInputLevel();
       const outLvl = audioGraphRef.current.getOutputLevel();
-      useTelemetryStore.getState().updateJitterMetrics(metrics);
       useTelemetryStore.getState().updateAudioLevels(inLvl, outLvl);
     }
   }, 100);

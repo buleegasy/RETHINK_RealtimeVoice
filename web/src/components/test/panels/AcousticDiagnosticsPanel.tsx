@@ -12,6 +12,7 @@ export const AcousticDiagnosticsPanel: React.FC = () => {
   const totalAudioChunks = useTelemetryStore((s) => s.totalAudioChunks);
   const totalBargeIns = useTelemetryStore((s) => s.totalBargeIns);
   const activeTransport = useTelemetryStore((s) => s.activeTransport);
+  const webRtcStats = useTelemetryStore((s) => s.webRtcStats);
 
   return (
     <div className="flex flex-col gap-2.5 min-h-0 h-full overflow-y-auto pr-0.5 font-mono select-none">
@@ -71,18 +72,22 @@ export const AcousticDiagnosticsPanel: React.FC = () => {
           <div className="grid grid-cols-2 gap-1.5 text-xs">
             <div className="p-1.5 rounded bg-slate-900/60 border border-slate-800 flex items-center justify-between">
               <span className="text-[10px] text-slate-400">
-                {activeTransport === 'webrtc' ? '传输协议' : '排队分片'}
+                {activeTransport === 'webrtc' ? '网络丢包' : '排队分片'}
               </span>
               <span className="font-bold text-slate-200">
-                {activeTransport === 'webrtc' ? 'UDP / SRTP' : `${jitter.queuedBuffers} 块`}
+                {activeTransport === 'webrtc'
+                  ? `${webRtcStats.packetsLost ?? 0} 包`
+                  : `${jitter.queuedBuffers} 块`}
               </span>
             </div>
             <div className="p-1.5 rounded bg-slate-900/60 border border-slate-800 flex items-center justify-between">
               <span className="text-[10px] text-slate-400">
-                {activeTransport === 'webrtc' ? '音频驱动' : '音频源'}
+                {activeTransport === 'webrtc' ? '音频码率' : '音频源'}
               </span>
               <span className="font-bold text-slate-200">
-                {activeTransport === 'webrtc' ? '硬件直通' : `${jitter.scheduledCount} 轨`}
+                {activeTransport === 'webrtc'
+                  ? `${webRtcStats.audioBitrateKbps ? `${webRtcStats.audioBitrateKbps} kbps` : '32 kbps'}`
+                  : `${jitter.scheduledCount} 轨`}
               </span>
             </div>
             <div className="p-1.5 rounded bg-slate-900/60 border border-slate-800 flex items-center justify-between">
@@ -185,7 +190,11 @@ export const AcousticDiagnosticsPanel: React.FC = () => {
             <div className="text-sm font-bold text-emerald-300 mt-0.5 truncate">
               {activeTransport === 'webrtc' ? 'minimax-events' : 'ws-frame'}
             </div>
-            <div className="text-[9px] text-slate-500 mt-0.5">双向全双工</div>
+            <div className="text-[9px] text-slate-500 mt-0.5 truncate">
+              {activeTransport === 'webrtc'
+                ? `ICE ${webRtcStats.iceConnectionState || 'connected'} · 通道 ${webRtcStats.dataChannelState || 'open'}`
+                : '双向全双工'}
+            </div>
           </div>
         </div>
       </div>

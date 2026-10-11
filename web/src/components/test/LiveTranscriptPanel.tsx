@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BookOpen, Cpu, Radio } from 'lucide-react';
 import { useTelemetryStore } from '../../store/telemetryStore';
 
@@ -7,6 +7,14 @@ export const LiveTranscriptPanel: React.FC = () => {
   const streamingAssistantText = useTelemetryStore((s) => s.streamingAssistantText);
   const transcriptFeed = useTelemetryStore((s) => s.transcriptFeed);
   const activeTransport = useTelemetryStore((s) => s.activeTransport);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [transcriptFeed, streamingUserText, streamingAssistantText]);
 
   return (
     <div className="flex-1 min-h-0 bg-[#0B0F19] border border-slate-800 rounded-lg flex flex-col overflow-hidden font-mono select-none">
@@ -29,7 +37,7 @@ export const LiveTranscriptPanel: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 p-3 overflow-y-auto space-y-2.5 font-sans">
+      <div ref={scrollRef} className="flex-1 min-h-0 p-3 overflow-y-auto space-y-2.5 font-sans">
         {/* 实时推流 Delta 气泡 */}
         {(streamingUserText || streamingAssistantText) && (
           <div className="space-y-1.5 p-2 rounded bg-slate-900/80 border border-slate-800 font-mono text-xs">

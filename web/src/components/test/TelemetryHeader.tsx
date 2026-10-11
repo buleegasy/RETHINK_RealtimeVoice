@@ -47,13 +47,13 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
   };
 
   return (
-    <header className="h-12 border-b border-slate-800 bg-[#0B0F19] px-4 flex items-center justify-between shrink-0 z-20 font-mono select-none">
+    <header className="h-12 border-b border-slate-800 bg-[#0B0F19] px-4 flex items-center justify-between shrink-0 z-20 font-mono select-none overflow-x-auto scrollbar-none">
       {/* 左侧：导航与系统品牌标识 */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
         <button
           type="button"
           onClick={() => setRunMode('web')}
-          className="flex items-center gap-1 px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs transition cursor-pointer border border-slate-800"
+          className="flex items-center gap-1 px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs transition cursor-pointer border border-slate-800 shrink-0"
           title="返回常规体验"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -62,24 +62,26 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
         <button
           type="button"
           onClick={() => setRunMode('admin')}
-          className="px-2 py-1 rounded bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 hover:text-indigo-200 text-xs transition cursor-pointer border border-indigo-800/50"
+          className="px-2 py-1 rounded bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 hover:text-indigo-200 text-xs transition cursor-pointer border border-indigo-800/50 shrink-0"
           title="教师管理后台"
         >
           教师后台
         </button>
 
-        <div className="h-3.5 w-px bg-slate-800" />
+        <div className="h-3.5 w-px bg-slate-800 shrink-0" />
 
-        <div className="flex items-center gap-2">
-          <div className="p-1 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="p-1 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/60 shrink-0">
             <Cpu className="w-3.5 h-3.5" />
           </div>
-          <span className="font-bold text-xs tracking-wider text-cyan-400">RETHINK TELEMETRY</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800">
+          <span className="font-bold text-xs tracking-wider text-cyan-400 shrink-0">
+            RETHINK TELEMETRY
+          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800 shrink-0">
             LIVE-1 DIRECT · CBT EMBEDDED
           </span>
           <span
-            className={`text-[10px] px-1.5 py-0.5 rounded border ${
+            className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${
               activeTransport === 'webrtc'
                 ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60'
                 : 'bg-slate-900 text-slate-400 border-slate-800'
@@ -87,22 +89,22 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
           >
             {activeTransport === 'webrtc' ? 'WEBRTC OPUS' : 'WS PCM16'}
           </span>
-          <span className="hidden xl:inline text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800">
+          <span className="hidden xl:inline text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800 shrink-0">
             DEEPSEEK V4 FLASH EVAL
           </span>
         </div>
       </div>
 
       {/* 中间：链路与双工运行态指标（极简紧凑单行对齐） */}
-      <div className="hidden lg:flex items-center gap-3 text-xs">
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+      <div className="hidden lg:flex items-center gap-3 text-xs whitespace-nowrap shrink-0">
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px] shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
           <span className="text-emerald-300 font-medium">WebRTC (UDP/Opus 直连)</span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
+        <div className="flex items-center gap-1.5 text-slate-400 text-[11px] shrink-0">
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
               isConnected
                 ? 'bg-emerald-400'
                 : sessionStatus === 'connecting'
@@ -115,19 +117,19 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
           </span>
         </div>
 
-        <div className="h-3 w-px bg-slate-800" />
+        <div className="h-3 w-px bg-slate-800 shrink-0" />
 
-        <div className="flex items-center gap-1 text-[11px]">
+        <div className="flex items-center gap-1 text-[11px] shrink-0">
           <span className="text-slate-500">阶段</span>
           <span className="text-cyan-400 font-semibold">{activeCbtStage}</span>
         </div>
 
-        <div className="h-3 w-px bg-slate-800" />
+        <div className="h-3 w-px bg-slate-800 shrink-0" />
 
-        <div className="flex items-center gap-1 text-[11px]">
+        <div className="flex items-center gap-1 text-[11px] shrink-0">
           <span className="text-slate-500">双工</span>
           <span
-            className={`font-semibold ${
+            className={`font-semibold shrink-0 ${
               duplexPhase === 'speaking'
                 ? 'text-emerald-400'
                 : duplexPhase === 'thinking'
@@ -147,16 +149,16 @@ export const TelemetryHeader: React.FC<TelemetryHeaderProps> = ({
           </span>
         </div>
 
-        <div className="h-3 w-px bg-slate-800" />
+        <div className="h-3 w-px bg-slate-800 shrink-0" />
 
-        <div className="flex items-center gap-1 text-slate-300 text-[11px]">
-          <Activity className="w-3.5 h-3.5 text-cyan-400" />
+        <div className="flex items-center gap-1 text-slate-300 text-[11px] shrink-0">
+          <Activity className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
           <span>{formatDuration(callDuration)}</span>
         </div>
       </div>
 
       {/* 右侧：动作控制按键（统一高度 h-7.5，对齐） */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 whitespace-nowrap shrink-0">
         <button
           type="button"
           onClick={clearTelemetry}

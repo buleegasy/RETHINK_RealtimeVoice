@@ -30,6 +30,10 @@ export class RealtimeToolDispatcher {
     return this.fsm;
   }
 
+  public getRagProvider(): IRagProvider {
+    return this.ragProvider;
+  }
+
   public async handleToolCall(
     name: string,
     args: Record<string, unknown>,

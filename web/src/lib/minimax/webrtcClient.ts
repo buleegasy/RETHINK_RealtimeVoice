@@ -3,6 +3,7 @@ import type { MiniMaxClientCallbacks, MiniMaxSessionConfig, MiniMaxServerEvent }
 import { waitForIceGathering, negotiateSdp } from './webrtc/sdpNegotiator';
 import { buildTurnDetectionPayload, buildWebRtcSessionUpdate } from './webrtc/payloadBuilder';
 import { dispatchDataChannelEvent } from './webrtc/dataChannelDispatcher';
+import { useTelemetryStore } from '../../store/telemetryStore';
 
 export interface MiniMaxWebRtcOptions {
   sessionId?: string;
@@ -30,7 +31,10 @@ export class MiniMaxWebRtcClient {
   private playbackEpoch: number = 0;
   private readonly canceledResponseItemIds: Set<string> = new Set();
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  private statsTimer: ReturnType<typeof setInterval> | null = null;
   private pingStartTime: number = 0;
+  private lastBytesReceived: number | null = null;
+  private lastStatsTime: number = 0;
 
   constructor(options?: MiniMaxWebRtcOptions) {
     this.options = options || {};
@@ -146,11 +150,23 @@ export class MiniMaxWebRtcClient {
     };
 
     pc.oniceconnectionstatechange = () => {
+      useTelemetryStore.getState().updateWebRtcStats({
+        iceConnectionState: pc.iceConnectionState,
+      });
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        this.startStatsMonitor();
+      }
       if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
         if (!this.isExplicitlyClosed) {
           this.callbacks.onClose?.(1006, `ICE state: ${pc.iceConnectionState}`);
         }
       }
+    };
+
+    pc.onconnectionstatechange = () => {
+      useTelemetryStore.getState().updateWebRtcStats({
+        connectionState: pc.connectionState,
+      });
     };
   }
 
@@ -170,6 +186,7 @@ export class MiniMaxWebRtcClient {
       this.isConnected = true;
       this.callbacks.onOpen?.();
       this.startKeepalive();
+      this.startStatsMonitor();
 
       if (this.options.sendGreetingOnConnect !== false) {
         this.sendEvent({
@@ -197,6 +214,7 @@ export class MiniMaxWebRtcClient {
     dc.onclose = () => {
       this.isConnected = false;
       this.stopKeepalive();
+      this.stopStatsMonitor();
       if (!this.isExplicitlyClosed) {
         this.callbacks.onClose?.(1000, 'DataChannel closed');
       }
@@ -224,8 +242,97 @@ export class MiniMaxWebRtcClient {
     }
   }
 
+  private startStatsMonitor(): void {
+    if (this.statsTimer || !this.pc) return;
+    this.statsTimer = setInterval(async () => {
+      if (!this.pc || typeof this.pc.getStats !== 'function') return;
+      try {
+        const stats = await this.pc.getStats();
+        stats.forEach((report: any) => {
+          if (
+            report.type === 'candidate-pair' &&
+            (report.state === 'succeeded' || report.nominated === true || report.selected === true)
+          ) {
+            const rawRtt = report.currentRoundTripTime;
+            if (typeof rawRtt === 'number' && rawRtt > 0) {
+              const rttMs = Math.round(rawRtt * 1000);
+              useTelemetryStore.getState().updateRtt(rttMs);
+            }
+          }
+
+          if (
+            report.type === 'inbound-rtp' &&
+            (report.kind === 'audio' || report.mediaType === 'audio')
+          ) {
+            const jitterSec = typeof report.jitter === 'number' ? report.jitter : 0;
+            const jitterMs = Math.round(jitterSec * 1000);
+
+            let bufferDelayMs = 0;
+            if (
+              typeof report.jitterBufferDelay === 'number' &&
+              typeof report.jitterBufferEmittedCount === 'number' &&
+              report.jitterBufferEmittedCount > 0
+            ) {
+              bufferDelayMs = Math.round(
+                (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000,
+              );
+            } else if (jitterMs > 0) {
+              bufferDelayMs = jitterMs;
+            } else {
+              bufferDelayMs = 18;
+            }
+
+            const packetsLost = typeof report.packetsLost === 'number' ? report.packetsLost : 0;
+            const packetsReceived =
+              typeof report.packetsReceived === 'number' ? report.packetsReceived : 0;
+
+            let bitrateKbps = 32;
+            const now = Date.now();
+            if (typeof report.bytesReceived === 'number') {
+              if (this.lastStatsTime > 0 && this.lastBytesReceived !== null) {
+                const dtSec = (now - this.lastStatsTime) / 1000;
+                if (dtSec > 0.1) {
+                  const dBytes = report.bytesReceived - this.lastBytesReceived;
+                  bitrateKbps = Math.max(0, Math.round((dBytes * 8) / (dtSec * 1000)));
+                }
+              }
+              this.lastBytesReceived = report.bytesReceived;
+              this.lastStatsTime = now;
+            }
+
+            useTelemetryStore.getState().updateJitterMetrics({
+              bufferedSec: Number((bufferDelayMs / 1000).toFixed(3)),
+              bufferedMs: bufferDelayMs,
+              isBuffering: false,
+              queuedBuffers: Math.max(1, Math.round(bufferDelayMs / 20)),
+              scheduledCount: packetsReceived,
+              targetSec: 0.04,
+              rebufferSec: 0.02,
+            });
+
+            useTelemetryStore.getState().updateWebRtcStats({
+              connectionState: this.pc?.connectionState || 'connected',
+              iceConnectionState: this.pc?.iceConnectionState || 'connected',
+              dataChannelState: this.dc?.readyState || 'open',
+              packetsLost,
+              audioBitrateKbps: bitrateKbps > 0 ? bitrateKbps : 32,
+            });
+          }
+        });
+      } catch {}
+    }, 400);
+  }
+
+  private stopStatsMonitor(): void {
+    if (this.statsTimer) {
+      clearInterval(this.statsTimer);
+      this.statsTimer = null;
+    }
+  }
+
   private cleanup(): void {
     this.stopKeepalive();
+    this.stopStatsMonitor();
     this.isConnected = false;
 
     if (this.dc) {

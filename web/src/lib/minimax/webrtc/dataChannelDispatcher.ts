@@ -57,11 +57,29 @@ export function dispatchDataChannelEvent(
       callId: event.call_id,
       args,
     });
-  } else if (type === 'safety_check' && (event as any).check) {
-    callbacks.onSafetyCheck?.((event as any).check);
-  } else if (type === 'shadow_directive' && (event as any).directive) {
-    callbacks.onShadowDirective?.((event as any).directive);
-  } else if (type === 'crisis_interception') {
+  } else if (
+    (type === 'rethink.telemetry.safety_check' || type === 'safety_check') &&
+    ((event as any).check || (event as any).durationMs !== undefined)
+  ) {
+    const raw = (event as any).check || event;
+    callbacks.onSafetyCheck?.({
+      turnSequence: Number(raw.turnSequence || 0),
+      isCrisis: Boolean(raw.isCrisis),
+      durationMs: Number(raw.durationMs || 0),
+      timestamp: Number(raw.timestamp || Date.now()),
+    });
+  } else if (type === 'rethink.telemetry.shadow_directive' || type === 'shadow_directive') {
+    const raw = (event as any).directive || event;
+    callbacks.onShadowDirective?.({
+      turnSequence: Number(raw.turnSequence || 0),
+      userText: String(raw.userText || ''),
+      cognitiveHint: typeof raw.cognitiveHint === 'string' ? raw.cognitiveHint : null,
+      ragRecall: raw.ragRecall || null,
+      durationMs: Number(raw.durationMs || 0),
+      fallback: Boolean(raw.fallback),
+      timestamp: Number(raw.timestamp || Date.now()),
+    });
+  } else if (type === 'rethink.crisis_intercepted' || type === 'crisis_interception') {
     callbacks.onCrisisInterception?.({
       message: (event as any).message || '触发高危心理防御拦截',
       tier: (event as any).tier,

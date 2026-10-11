@@ -58,45 +58,40 @@ export const TestWorkbench: React.FC = () => {
       {/* 关键性能与链路指标 KPI 条 */}
       <TelemetryKpiStrip />
 
-      {/* 主体工作区 (两栏分布: 左转写 7 cols, 右遥测套件 5 cols) */}
+      {/* 主体工作区 (两栏分布: 左主遥测诊断套件 8 cols, 右紧凑转写侧边栏 4 cols) */}
       <div className="flex-1 min-h-0 p-3 grid grid-cols-1 lg:grid-cols-12 gap-3 overflow-hidden">
-        {/* 左侧：语音转写实时流 (7 cols) */}
-        <div className="lg:col-span-7 flex flex-col min-h-0 h-full">
-          <LiveTranscriptPanel />
-        </div>
-
-        {/* 右侧：多维遥测工作台套件 (5 cols) */}
-        <div className="lg:col-span-5 flex flex-col min-h-0 h-full bg-[#0B0F19] border border-slate-800 rounded-lg overflow-hidden">
-          {/* 选项卡导航头 (统一紧凑 h-9) */}
-          <div className="flex items-center border-b border-slate-800 bg-slate-900/60 px-2 h-9 gap-1 shrink-0 font-mono">
+        {/* 左侧：多维遥测工作台套件 (8 cols 主体) */}
+        <div className="lg:col-span-8 flex flex-col min-h-0 h-full bg-[#0B0F19] border border-slate-800 rounded-lg overflow-hidden">
+          {/* 选项卡导航头 (统一紧凑 h-9, 防折行对齐) */}
+          <div className="flex items-center border-b border-slate-800 bg-slate-900/60 px-2 h-9 gap-1 shrink-0 font-mono overflow-x-auto scrollbar-none">
             <button
               type="button"
               onClick={() => setActiveTab('rag')}
-              className={`flex items-center gap-1.5 px-2.5 h-7 text-xs rounded transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 h-7 text-xs rounded transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'rag'
                   ? 'bg-slate-800 text-cyan-300 font-semibold border border-slate-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
               }`}
             >
-              <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+              <BookOpen className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>RAG 知识召回</span>
-              <span className="text-[10px] px-1 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/60">
-                {ragRetrievals.length > 0 ? ragRetrievals.length : '16组'}
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/60 shrink-0">
+                {ragRetrievals.length > 0 ? `${ragRetrievals.length} 次` : '16 组'}
               </span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('fsm')}
-              className={`flex items-center gap-1.5 px-2.5 h-7 text-xs rounded transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 h-7 text-xs rounded transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'fsm'
                   ? 'bg-slate-800 text-indigo-300 font-semibold border border-slate-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
               }`}
             >
-              <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+              <Cpu className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
               <span>CBT 状态机</span>
-              <span className="text-[10px] px-1 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-800/60 truncate max-w-[80px]">
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-800/60 truncate max-w-[90px] shrink-0">
                 {currentStage}
               </span>
             </button>
@@ -104,15 +99,15 @@ export const TestWorkbench: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('acoustic')}
-              className={`flex items-center gap-1.5 px-2.5 h-7 text-xs rounded transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 h-7 text-xs rounded transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'acoustic'
                   ? 'bg-slate-800 text-emerald-300 font-semibold border border-slate-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
               }`}
             >
-              <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+              <Sliders className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span>声学与传输</span>
-              <span className="text-[10px] px-1 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/60">
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/60 shrink-0">
                 {activeTransport === 'webrtc' ? 'WebRTC' : 'WS'}
               </span>
             </button>
@@ -120,13 +115,13 @@ export const TestWorkbench: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('events')}
-              className={`flex items-center gap-1.5 px-2.5 h-7 text-xs rounded transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 h-7 text-xs rounded transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'events'
                   ? 'bg-slate-800 text-purple-300 font-semibold border border-slate-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
               }`}
             >
-              <Activity className="w-3.5 h-3.5 text-purple-400" />
+              <Activity className="w-3.5 h-3.5 text-purple-400 shrink-0" />
               <span>事件与原始帧</span>
             </button>
           </div>
@@ -146,6 +141,11 @@ export const TestWorkbench: React.FC = () => {
               <RawEventsDiagnosticsPanel />
             </div>
           </div>
+        </div>
+
+        {/* 右侧：紧凑型语音转写实时流 (4 cols 侧边栏) */}
+        <div className="lg:col-span-4 flex flex-col min-h-0 h-full">
+          <LiveTranscriptPanel />
         </div>
       </div>
     </div>

@@ -174,7 +174,7 @@ export interface TelemetryState {
 const initialJitter: JitterMetricsData = {
   bufferedSec: 0,
   bufferedMs: 0,
-  isBuffering: true,
+  isBuffering: false,
   queuedBuffers: 0,
   scheduledCount: 0,
   targetSec: 0.04,
