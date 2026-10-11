@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { RealtimeGatewayAdapter } from '../src/adapters/realtime-gateway-adapter';
-import { CrisisHandler } from '../src/services/voice/crisis-handler';
 import { BargeInCoordinator } from '../src/services/voice/barge-in-coordinator';
 import { RelaySessionCoordinator } from '../src/services/voice/relay-session-coordinator';
 import { ShadowReasoningPipeline } from '../src/services/voice/shadow-reasoning-pipeline';
@@ -133,37 +132,6 @@ describe('R3 流式时序协同与 Server VAD 抢话防护 (Streaming Timing & V
     expect(coordinator.isValid(turn1.sequenceId)).toBe(false);
     expect(turn1.signal.aborted).toBe(true);
     expect(abortSpy).toHaveBeenCalled();
-  });
-});
-
-describe('R3 危机物理断流与 WebSocket 关断闭环 (Crisis Cutoff)', () => {
-  it('CrisisHandler.triggerIntervention 触发时必须显式关闭 serverWs 与 upstreamWs', () => {
-    const serverWs = new MockWebSocket() as unknown as WebSocket;
-    const upstreamWs = new MockWebSocket() as unknown as WebSocket;
-
-    const handler = new CrisisHandler(serverWs, upstreamWs, undefined, 'sess_test_crisis_close');
-
-    expect((serverWs as any).closed).toBe(false);
-    expect((upstreamWs as any).closed).toBe(false);
-
-    handler.triggerIntervention('L1', '触发自杀自伤拦截', ['自杀危机']);
-
-    expect(handler.isTriggered).toBe(true);
-    expect((upstreamWs as any).closed).toBe(true);
-    expect((serverWs as any).closed).toBe(true);
-    expect((upstreamWs as any).closeCode).toBe(1000);
-    expect((serverWs as any).closeCode).toBe(1000);
-
-    // 检查 serverWs 收到 rethink.crisis_intercepted 帧
-    const serverMsgs = (serverWs as any).sentData.map((d: string) => JSON.parse(d));
-    const crisisMsg = serverMsgs.find((m: any) => m.type === 'rethink.crisis_intercepted');
-    expect(crisisMsg).toBeDefined();
-    expect(crisisMsg.tier).toBe('L1');
-
-    // 检查 upstreamWs 收到 response.cancel 帧
-    const upstreamMsgs = (upstreamWs as any).sentData.map((d: string) => JSON.parse(d));
-    const cancelMsg = upstreamMsgs.find((m: any) => m.type === 'response.cancel');
-    expect(cancelMsg).toBeDefined();
   });
 });
 

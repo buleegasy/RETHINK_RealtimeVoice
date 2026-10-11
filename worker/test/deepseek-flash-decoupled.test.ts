@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isL1Crisis, checkL2FlashSafety, checkDoubleSpeedSafety } from '../src/lib/safety-filter';
 import {
   performShadowReasoning,
   generateStructuredReportWithFlash,
@@ -17,90 +16,7 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
     vi.restoreAllMocks();
   });
 
-  describe('模块一：双速分层风险拦截链路 (L1 + L2)', () => {
-    it('L1 本地即时硬过滤应在 0ms 级别精确匹配自杀自残等极端词汇', () => {
-      expect(isL1Crisis('我觉得生活没有希望，想跳楼自杀')).toBe(true);
-      expect(isL1Crisis('我已经买了大量安眠药准备吞药结束生命')).toBe(true);
-      expect(isL1Crisis('真的不想在这个世界上活下去了，准备彻底解脱')).toBe(true);
-      expect(isL1Crisis('我现在一个人站在天台窗台上')).toBe(true);
-      expect(isL1Crisis('我拿小刀划手放血，割大动脉')).toBe(true);
-      expect(isL1Crisis('房间门窗已封死，准备烧炭自杀')).toBe(true);
-      expect(isL1Crisis('谁也别救我，这是我的绝笔遗书')).toBe(true);
-      expect(isL1Crisis('今天数学考试好难，心情有点烦躁')).toBe(false);
-      expect(isL1Crisis('')).toBe(false);
-    });
-
-    it('L1 本地过滤在识别到否定词与劝阻语境时应精准放行避免误杀', () => {
-      expect(isL1Crisis('我不想死，我还想好好活着呢')).toBe(false);
-      expect(isL1Crisis('我绝对不会去自杀的')).toBe(false);
-      expect(isL1Crisis('我没有要自杀，只是有点心烦')).toBe(false);
-      expect(isL1Crisis('我已经彻底打消了轻生的念头')).toBe(false);
-      expect(isL1Crisis('班长及时拉住并劝阻了要跳楼的同学')).toBe(false);
-      expect(isL1Crisis('我不会去自残的，放心吧')).toBe(false);
-      expect(isL1Crisis('我虽然不想死，但我买了百草枯准备喝')).toBe(true);
-    });
-
-    it('L2 DeepSeek V4 Flash 语义旁路熔断应基于单字符枚举精准断言', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          choices: [
-            {
-              message: {
-                content: '1',
-              },
-            },
-          ],
-        }),
-      } as any);
-
-      const isCrisis = await checkL2FlashSafety('我觉得如果我消失了，对所有人都是一种解脱', {
-        apiKey: 'test-openrouter-key',
-        model: 'deepseek/deepseek-v4-flash',
-      });
-
-      expect(isCrisis).toBe(true);
-      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-    });
-
-    it('checkDoubleSpeedSafety 命中 L1 时应免除网络请求直接瞬时熔断', async () => {
-      const fetchSpy = vi.fn();
-      globalThis.fetch = fetchSpy;
-
-      const result = await checkDoubleSpeedSafety('我不想活了，准备割腕', {
-        apiKey: 'test-key',
-      });
-
-      expect(result.isCrisis).toBe(true);
-      expect(result.tier).toBe('L1');
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-
-    it('checkDoubleSpeedSafety 在 L1 未命中时应平滑流转至 L2 并返回合规状态', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          choices: [
-            {
-              message: {
-                content: '0',
-              },
-            },
-          ],
-        }),
-      } as any);
-
-      const result = await checkDoubleSpeedSafety('明天要开家长会了，我感觉非常焦虑', {
-        apiKey: 'test-key',
-        model: 'deepseek/deepseek-v4-flash',
-      });
-
-      expect(result.isCrisis).toBe(false);
-      expect(result.tier).toBe('none');
-    });
-  });
-
-  describe('模块二：异步影子推导与记忆抽取链路', () => {
+  describe('模块一：异步影子推导与记忆抽取链路', () => {
     it('performShadowReasoning 能够结合上下文、知识库与学生意图输出极简纯文本策略指令（无“你应该”与JSON限制）', async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -419,36 +335,6 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
       });
       expect(requestedModel).toBe('MiniMax-M3');
       expect(requestedEndpoint).toContain('https://api.minimaxi.chat/v1/text/chatcompletion_v2');
-    });
-
-    it('危机判定能无缝适配 OpenRouter Jev Decisions API 协议与 noul 概率判定', async () => {
-      let interceptedEndpoint = '';
-      let interceptedBody: any = null;
-
-      globalThis.fetch = vi.fn().mockImplementation(async (url: string, opts: any) => {
-        interceptedEndpoint = url;
-        interceptedBody = JSON.parse(opts.body);
-        return {
-          ok: true,
-          json: async () => ({
-            decisions: {
-              is_crisis: {
-                type: 'noul',
-                result: true,
-                probability: 0.98,
-              },
-            },
-          }),
-        };
-      });
-
-      const isCrisis = await checkL2FlashSafety('我真的撑不下去了，想从天台跳下去', {
-        apiKey: 'test-openrouter-key',
-      });
-
-      expect(isCrisis).toBe(true);
-      expect(interceptedEndpoint).toContain('/alpha/decisions');
-      expect(interceptedBody.questions?.is_crisis?.type).toBe('noul');
     });
   });
 });

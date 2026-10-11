@@ -72,12 +72,6 @@ export interface MiniMaxClientCallbacks {
     fallback: boolean;
     timestamp: number;
   }) => void;
-  onSafetyCheck?: (data: {
-    turnSequence: number;
-    isCrisis: boolean;
-    durationMs: number;
-    timestamp: number;
-  }) => void;
   onPingPong?: (rttMs: number) => void;
   onTTFT?: (ttftMs: number) => void;
   onReconnecting?: (attempt: number, maxAttempts: number, delayMs: number) => void;

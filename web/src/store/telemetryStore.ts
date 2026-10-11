@@ -88,13 +88,6 @@ export interface JitterMetricsData {
   rebufferSec: number;
 }
 
-export interface SafetyCheckLog {
-  turnSequence: number;
-  isCrisis: boolean;
-  durationMs: number;
-  timestamp: number;
-}
-
 export interface WebRtcStatsData {
   connectionState: string;
   iceConnectionState: string;
@@ -138,8 +131,7 @@ export interface TelemetryState {
   // WebRTC 链路细节
   webRtcStats: WebRtcStatsData;
 
-  // 危机与系统状态
-  latestSafetyCheck: SafetyCheckLog | null;
+  // 状态与链路
   activeCbtStage: string;
   duplexPhase: string;
   isConnected: boolean;
@@ -162,7 +154,6 @@ export interface TelemetryState {
   updateAudioLevels: (input: number, output: number) => void;
   incrementAudioChunks: () => void;
   incrementBargeIns: () => void;
-  setSafetyCheck: (check: SafetyCheckLog) => void;
   setCbtStage: (stage: string) => void;
   setDuplexPhase: (phase: string) => void;
   setIsConnected: (connected: boolean) => void;
@@ -227,7 +218,6 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
 
   webRtcStats: initialWebRtcStats,
 
-  latestSafetyCheck: null,
   activeCbtStage: 'Active_Listening',
   duplexPhase: 'idle',
   isConnected: false,
@@ -370,7 +360,6 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
 
   incrementBargeIns: () => set((state) => ({ totalBargeIns: state.totalBargeIns + 1 })),
 
-  setSafetyCheck: (check) => set({ latestSafetyCheck: check }),
   setCbtStage: (stage) =>
     set((state) => ({
       activeCbtStage: stage,
@@ -406,6 +395,5 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
       outputAudioLevel: 0,
       totalAudioChunks: 0,
       totalBargeIns: 0,
-      latestSafetyCheck: null,
     }),
 }));

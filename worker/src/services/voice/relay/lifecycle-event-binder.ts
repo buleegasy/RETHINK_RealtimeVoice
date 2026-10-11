@@ -1,7 +1,6 @@
 import type { Env } from '../../../types';
 import { RealtimeGatewayAdapter } from '../../../adapters/realtime-gateway-adapter';
 import type { BargeInCoordinator } from '../barge-in-coordinator';
-import type { CrisisHandler } from '../crisis-handler';
 import type { SidebandAgent } from '../sideband-agent';
 import { SessionReporter } from '../session-reporter';
 
@@ -10,7 +9,6 @@ export class LifecycleEventBinder {
     serverWs: WebSocket;
     upstreamWs: WebSocket;
     coordinator: BargeInCoordinator;
-    crisisHandler: CrisisHandler;
     sidebandAgent: SidebandAgent;
     env: Env;
     sessionId: string;
@@ -22,7 +20,6 @@ export class LifecycleEventBinder {
       serverWs,
       upstreamWs,
       coordinator,
-      crisisHandler,
       sidebandAgent,
       env,
       sessionId,
@@ -44,9 +41,7 @@ export class LifecycleEventBinder {
               .map((d) => `${d.role === 'user' ? studentName || '学生' : '智能体'}: ${d.content}`)
               .join('\n');
             const duration = Math.max(1, Math.round((Date.now() - sessionStartTime) / 1000));
-            const stage = crisisHandler.isTriggered
-              ? 'Crisis_Escalation'
-              : sidebandAgent.getCbtStage();
+            const stage = sidebandAgent.getCbtStage();
 
             await SessionReporter.generateAndPersist(
               env,
@@ -58,7 +53,6 @@ export class LifecycleEventBinder {
                 userId: requestedUserId,
                 transcriptText: fullTranscript,
                 dialogueTurns: dialogueHistory,
-                isCrisisExplicit: crisisHandler.isTriggered,
               },
               ctx,
             );

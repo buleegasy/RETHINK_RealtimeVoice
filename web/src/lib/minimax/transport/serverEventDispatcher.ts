@@ -255,15 +255,6 @@ export class ServerEventDispatcher {
         timestamp: Number((event as any).timestamp || Date.now()),
       });
     }
-
-    if (type === 'rethink.telemetry.safety_check') {
-      callbacks.onSafetyCheck?.({
-        turnSequence: Number((event as any).turnSequence || 0),
-        isCrisis: Boolean((event as any).isCrisis),
-        durationMs: Number((event as any).durationMs || 0),
-        timestamp: Number((event as any).timestamp || Date.now()),
-      });
-    }
   }
 
   private handlePongAndError(

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SidebandAgent } from '../src/services/voice/sideband-agent';
 import { BargeInCoordinator } from '../src/services/voice/barge-in-coordinator';
-import { CrisisHandler } from '../src/services/voice/crisis-handler';
 import { ShadowReasoningPipeline } from '../src/services/voice/shadow-reasoning-pipeline';
 import { RealtimeGatewayAdapter } from '../src/adapters/realtime-gateway-adapter';
 
@@ -51,7 +50,6 @@ describe('原生旁路监护智能体 (SidebandAgent) 单元测试', () => {
     const serverWs = new MockWebSocket() as unknown as WebSocket;
     const upstreamWs = new MockWebSocket() as unknown as WebSocket;
     const coordinator = new BargeInCoordinator();
-    const crisisHandler = new CrisisHandler(serverWs, upstreamWs, undefined, 'sess_test');
     const shadowPipeline = {
       execute: vi.fn().mockResolvedValue('肯定其情绪并温和澄清自动化负面思维'),
     } as unknown as ShadowReasoningPipeline;
@@ -64,7 +62,6 @@ describe('原生旁路监护智能体 (SidebandAgent) 单元测试', () => {
       serverWs,
       upstreamWs,
       coordinator,
-      crisisHandler,
       shadowPipeline,
       openRouterConfig: {
         openRouterKey: 'mock-key',
@@ -78,7 +75,6 @@ describe('原生旁路监护智能体 (SidebandAgent) 单元测试', () => {
       serverWs: serverWs as unknown as MockWebSocket,
       upstreamWs: upstreamWs as unknown as MockWebSocket,
       coordinator,
-      crisisHandler,
       shadowPipeline,
     };
   }
@@ -154,19 +150,6 @@ describe('原生旁路监护智能体 (SidebandAgent) 单元测试', () => {
     });
 
     expect(agent.getDialogueHistory().length).toBe(1);
-  });
-
-  it('命中 L1 极端危机敏感词时触发危机物理断流与熔断', async () => {
-    const { agent, crisisHandler } = createAgentHarness();
-    const triggerSpy = vi.spyOn(crisisHandler, 'triggerIntervention');
-
-    await agent.processUserSpeech('我不想活了，打算跳楼结束这一切');
-
-    expect(triggerSpy).toHaveBeenCalledWith(
-      'L1',
-      expect.stringContaining('L1本地即时硬过滤命中危机敏感词'),
-      expect.any(Array),
-    );
   });
 
   it('非直连模式下用户发言触发显式 response.create 并使用 session.update 注入认知引导', async () => {

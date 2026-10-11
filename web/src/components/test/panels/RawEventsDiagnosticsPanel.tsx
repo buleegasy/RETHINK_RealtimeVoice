@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { Activity, Copy, Check, FileDown, ShieldCheck, ShieldAlert, Cpu } from 'lucide-react';
+import { Activity, Copy, Check, FileDown, BookOpen, Cpu } from 'lucide-react';
 import { useTelemetryStore } from '../../../store/telemetryStore';
 
 export const RawEventsDiagnosticsPanel: React.FC = () => {
   const {
     shadowDirectives,
     latestShadowDirective,
-    latestSafetyCheck,
     activeCbtStage,
     cbtFsmState,
     ragRetrievals,
@@ -50,7 +49,6 @@ export const RawEventsDiagnosticsPanel: React.FC = () => {
     duplexPhase,
     wsConnected: isConnected,
     latestShadowDirective: latestShadowDirective || null,
-    latestSafetyCheck: latestSafetyCheck || null,
   };
 
   const handleCopyJson = () => {
@@ -69,7 +67,6 @@ export const RawEventsDiagnosticsPanel: React.FC = () => {
 - CBT 状态机: 阶段 ${cbtFsmState.stage}, 情绪效价 ${cbtFsmState.emotionalValence.toFixed(2)}, 认知暴露度 ${(cbtFsmState.cognitiveExposure * 100).toFixed(0)}%
 - RAG 召回命中数: ${ragRetrievals.length} 次
 - 音频分片吞吐: ${totalAudioChunks} 帧, 插话打断: ${totalBargeIns} 次
-- 安全审查状态: ${latestSafetyCheck?.isCrisis ? 'CRISIS 拦截' : 'PASS 正常放行'} (${latestSafetyCheck?.durationMs || 0}ms)
 
 ## RAG 知识检索详情
 ${ragRetrievals
@@ -98,6 +95,8 @@ ${shadowDirectives
     setCopiedReport(true);
     setTimeout(() => setCopiedReport(false), 2000);
   };
+
+  const latestRag = ragRetrievals[0];
 
   return (
     <div className="flex flex-col gap-2.5 min-h-0 h-full overflow-y-auto pr-0.5 font-mono select-none">
@@ -131,7 +130,7 @@ ${shadowDirectives
         </div>
       </div>
 
-      {/* 2. 影子大脑推理与安全审查汇总 */}
+      {/* 2. 影子大脑推理与 RAG 知识检索汇总 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 shrink-0">
         {/* 影子大脑卡片 */}
         <div className="bg-[#0B0F19] border border-slate-800 rounded-md p-2.5">
@@ -147,37 +146,27 @@ ${shadowDirectives
           </div>
         </div>
 
-        {/* L1 / L2 安全审查卡片 */}
+        {/* RAG 知识检索卡片 */}
         <div className="bg-[#0B0F19] border border-slate-800 rounded-md p-2.5">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <div className="flex items-center gap-1 text-emerald-300 font-semibold">
-              {latestSafetyCheck?.isCrisis ? (
-                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-              ) : (
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              )}
-              <span>L1/L2 双轨安全哨兵</span>
+            <div className="flex items-center gap-1 text-cyan-300 font-semibold">
+              <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+              <span>RAG 知识检索与胶囊</span>
             </div>
-            <span>{latestSafetyCheck ? `${latestSafetyCheck.durationMs}ms` : 'STANDBY'}</span>
+            <span>{latestRag ? `${(latestRag.score * 100).toFixed(0)}%` : 'BGE-M3'}</span>
           </div>
           <div className="text-[11px] text-slate-300 bg-slate-950 p-1.5 rounded border border-slate-800 space-y-0.5">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">L1 消歧:</span>
-              <span className="text-emerald-400 font-bold">0 FN / 0 FP</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">L2 审查:</span>
-              <span
-                className={`font-bold ${
-                  latestSafetyCheck?.isCrisis ? 'text-rose-400' : 'text-emerald-400'
-                }`}
-              >
-                {latestSafetyCheck
-                  ? latestSafetyCheck.isCrisis
-                    ? 'CRISIS 拦截'
-                    : 'PASS 放行'
-                  : '待命中'}
+            <div className="flex items-center justify-between truncate">
+              <span className="text-slate-400 truncate max-w-[130px]">
+                {latestRag?.topic || '16 组 CBT 胶囊预载'}
               </span>
+              <span className="text-cyan-400 font-bold ml-1">
+                {latestRag ? `${latestRag.durationMs}ms` : '预载就绪'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-500">
+              <span>分类: {latestRag?.category || '通用'}</span>
+              <span>召回: {ragRetrievals.length} 次</span>
             </div>
           </div>
         </div>

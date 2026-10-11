@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Cpu, Radio, ShieldAlert, ShieldCheck, Sliders, Zap } from 'lucide-react';
+import { BookOpen, Cpu, Radio, Sliders, Zap } from 'lucide-react';
 import { useTelemetryStore } from '../../store/telemetryStore';
 
 export const TelemetryKpiStrip: React.FC = () => {
@@ -13,7 +13,6 @@ export const TelemetryKpiStrip: React.FC = () => {
     totalBargeIns,
     inputAudioLevel,
     outputAudioLevel,
-    latestSafetyCheck,
     activeTransport,
     cbtFsmState,
     activeCbtStage,
@@ -35,7 +34,7 @@ export const TelemetryKpiStrip: React.FC = () => {
   const latestRag = ragRetrievals[0];
 
   return (
-    <section className="bg-[#0B0F19] border-b border-slate-800 px-4 py-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 shrink-0 font-mono select-none">
+    <section className="bg-[#0B0F19] border-b border-slate-800 px-4 py-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 shrink-0 font-mono select-none">
       {/* 1. RTT & Transport */}
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-md p-2 flex flex-col justify-between h-[76px]">
         <div className="flex items-center justify-between text-[10px] text-slate-400">
@@ -159,7 +158,10 @@ export const TelemetryKpiStrip: React.FC = () => {
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-md p-2 flex flex-col justify-between h-[76px]">
         <div className="flex items-center justify-between text-[10px] text-slate-400">
           <span className="truncate">抖动缓冲水位 (Jitter)</span>
-          <Sliders className="w-3 h-3 text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[9px] text-slate-500">打断 {totalBargeIns}</span>
+            <Sliders className="w-3 h-3 text-emerald-400 shrink-0" />
+          </div>
         </div>
         <div className="flex items-baseline gap-1">
           <span className="text-lg font-bold text-emerald-300">{jitter.bufferedMs}</span>
@@ -197,34 +199,6 @@ export const TelemetryKpiStrip: React.FC = () => {
               />
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* 6. L2 危机安全哨兵 */}
-      <div className="bg-slate-900/60 border border-slate-800/80 rounded-md p-2 flex flex-col justify-between h-[76px]">
-        <div className="flex items-center justify-between text-[10px] text-slate-400">
-          <span className="truncate">L2 Jev 语义安全哨兵</span>
-          {latestSafetyCheck?.isCrisis ? (
-            <ShieldAlert className="w-3 h-3 text-rose-400 shrink-0" />
-          ) : (
-            <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
-          )}
-        </div>
-        <div className="flex items-baseline gap-1">
-          <span
-            className={`text-lg font-bold ${
-              latestSafetyCheck?.isCrisis ? 'text-rose-400' : 'text-emerald-400'
-            }`}
-          >
-            {latestSafetyCheck ? (latestSafetyCheck.isCrisis ? 'CRISIS' : 'PASS') : 'STANDBY'}
-          </span>
-          <span className="ml-auto text-[9px] px-1.5 py-0.2 rounded border border-slate-800 bg-slate-900 text-slate-400">
-            打断 {totalBargeIns}
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-[10px] text-slate-500">
-          <span>L1 消歧通过</span>
-          <span>{latestSafetyCheck ? `${latestSafetyCheck.durationMs}ms` : '--'}</span>
         </div>
       </div>
     </section>

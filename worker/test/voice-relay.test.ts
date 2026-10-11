@@ -69,18 +69,18 @@ describe('Worker 路由与健康检查测试', () => {
     expect(body.ok).toBe(true);
   });
 
-  it('POST /api/voice/chat 处理危机词时触发紧急干预', async () => {
+  it('POST /api/voice/chat 处理学生倾诉文本并返回陪伴回复', async () => {
     const res = await app.request('/api/voice/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: '我觉得活着没意思，想跳楼自杀' }),
+      body: JSON.stringify({ text: '今天模拟考没考好，心里有点难受' }),
     });
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.ok).toBe(true);
-    expect(body.isCrisis).toBe(true);
-    expect(body.nextStage).toBe('Crisis_Escalation');
+    expect(body.isCrisis).toBe(false);
+    expect(body.reply).toBeDefined();
   });
 
   it('POST /api/voice/chat 拒绝空请求', async () => {

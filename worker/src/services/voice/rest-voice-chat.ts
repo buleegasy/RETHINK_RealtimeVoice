@@ -1,9 +1,7 @@
 import type { Env } from '../../types';
 import { BgeRetriever } from '../../lib/rag';
 import { generateMiniMaxChatReply, synthesizeRealtimeAudio } from '../../lib/minimax-voice-relay';
-import { isL1Crisis } from '../../lib/safety-filter';
 import { CbtStateMachine, type CBTStage } from '../../lib/cbt-fsm';
-import { sendCrisisWebhook } from '../../lib/webhook-sender';
 
 export async function fetchDirectMiniMaxReply(env: Env, messages: any[]): Promise<string | null> {
   try {
@@ -36,7 +34,7 @@ export async function fetchDirectMiniMaxReply(env: Env, messages: any[]): Promis
 export async function handleRestChat(
   env: Env,
   body: { text?: string; stage?: string; history?: any[] },
-  ctx?: ExecutionContext,
+  _ctx?: ExecutionContext,
 ): Promise<{
   ok: boolean;
   error?: string;
@@ -51,31 +49,6 @@ export async function handleRestChat(
 
   if (!userText) {
     return { ok: false, error: 'Empty text' };
-  }
-
-  if (isL1Crisis(userText)) {
-    if (env.CRISIS_WEBHOOK_URL) {
-      const webhookTask = sendCrisisWebhook(env.CRISIS_WEBHOOK_URL, {
-        sessionId: `rest_crisis_${Date.now()}`,
-        crisisLevel: 3,
-        crisisSummary: 'REST降级对话命中L1危机敏感词',
-        occurredAt: new Date().toISOString(),
-        boothLocation: '校园心理驿站#01',
-        coreConcerns: ['自伤自杀危机', '紧急干预'],
-      }).catch((e) => console.warn('[VoiceService REST] Webhook 派发异常:', e));
-
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(webhookTask);
-      }
-    }
-
-    return {
-      ok: true,
-      isCrisis: true,
-      nextStage: 'Crisis_Escalation',
-      reply: '我听到了你现在非常痛苦，请记住生命永远是最宝贵的。我现在立即为你接通紧急守护支持。',
-      audioBase64: '',
-    };
   }
 
   let knowledgeHint = '';

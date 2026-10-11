@@ -1,41 +1,8 @@
-import { checkL2FlashSafety } from '../../../lib/safety-filter';
 import { isWsOpen } from '../../../lib/ws-constants';
 import type { SidebandAgentConfig } from '../sideband-agent';
 
 export class SidebandDispatcher {
   constructor(private readonly config: SidebandAgentConfig) {}
-
-  public dispatchL2Safety(userText: string, seq: number): void {
-    const { serverWs, coordinator, crisisHandler, openRouterConfig } = this.config;
-    const startTime = Date.now();
-
-    checkL2FlashSafety(userText, {
-      apiKey: openRouterConfig.openRouterKey,
-      baseUrl: openRouterConfig.openRouterBaseUrl,
-      signal: AbortSignal.timeout(5000),
-    })
-      .then((isCrisis) => {
-        if (isWsOpen(serverWs)) {
-          serverWs.send(
-            JSON.stringify({
-              type: 'rethink.telemetry.safety_check',
-              turnSequence: seq,
-              isCrisis,
-              durationMs: Date.now() - startTime,
-              timestamp: Date.now(),
-            }),
-          );
-        }
-        if (isCrisis && !crisisHandler.isTriggered) {
-          coordinator.interrupt();
-          crisisHandler.triggerIntervention('L2', 'L2 DeepSeek V4 Flash语义熔断命中危机', [
-            '自伤自杀危机',
-            '语义旁路熔断',
-          ]);
-        }
-      })
-      .catch(() => {});
-  }
 
   public async dispatchShadow(
     userText: string,

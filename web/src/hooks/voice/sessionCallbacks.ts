@@ -257,9 +257,6 @@ export function buildVoiceClientCallbacks(deps: VoiceCallbackDependencies): Mini
     onShadowDirective: (directive) => {
       useTelemetryStore.getState().addShadowDirective(directive);
     },
-    onSafetyCheck: (check) => {
-      useTelemetryStore.getState().setSafetyCheck(check);
-    },
     onPingPong: (rttMs) => {
       useTelemetryStore.getState().updateRtt(rttMs);
       audioGraph.updateNetworkQuality(rttMs);

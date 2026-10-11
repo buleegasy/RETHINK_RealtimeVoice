@@ -1,8 +1,6 @@
 import { CbtStateMachine } from '../../lib/cbt-fsm';
-import { isL1Crisis } from '../../lib/safety-filter';
 import { isWsOpen } from '../../lib/ws-constants';
 import type { BargeInCoordinator } from './barge-in-coordinator';
-import type { CrisisHandler } from './crisis-handler';
 import type { ShadowReasoningPipeline } from './shadow-reasoning-pipeline';
 import { SpeechTurnManager } from './sideband/speech-turn-manager';
 import { SidebandDispatcher } from './sideband/sideband-dispatcher';
@@ -15,7 +13,6 @@ export interface SidebandAgentConfig {
   serverWs: WebSocket;
   upstreamWs: WebSocket;
   coordinator: BargeInCoordinator;
-  crisisHandler: CrisisHandler;
   shadowPipeline: ShadowReasoningPipeline;
   openRouterConfig: {
     openRouterKey: string;
@@ -176,19 +173,9 @@ export class SidebandAgent {
     this.cbtFsm.recordTurn('user');
     const { sequenceId, signal } = this.config.coordinator.nextTurn();
 
-    if (isL1Crisis(trimmed)) {
-      this.config.crisisHandler.triggerIntervention('L1', 'L1本地即时硬过滤命中危机敏感词', [
-        '自伤自杀危机',
-        '紧急干预',
-      ]);
-      return;
-    }
-
     if (!this.config.isDirectLive) {
       this.triggerTurnResponse(sequenceId, signal);
     }
-
-    this.dispatcher.dispatchL2Safety(trimmed, sequenceId);
 
     if (this.enableShadowReasoning) {
       this.dispatcher

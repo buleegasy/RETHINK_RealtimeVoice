@@ -1,5 +1,4 @@
 import type { CrisisLevel } from '../types';
-import { disambiguateCrisis } from './safety-filter';
 
 export interface EvaluationResult {
   crisisLevel: CrisisLevel;
@@ -123,13 +122,14 @@ export function evaluateTranscriptRuleBased(transcript: string): EvaluationResul
   let isCrisis = false;
   let crisisSummary = '情绪状态相对稳定，未触发危机预警';
 
-  // 1. 接入统一 Aho-Corasick + 否定消歧引擎 (支持“我并不想死”等反向断言消歧)
-  const l1Check = disambiguateCrisis(text);
-  if (l1Check.isCrisis) {
+  // 1. 基础极端危机意向规则识别（去否定词保护）
+  const hasExtremeCrisis =
+    /自杀|自残|跳楼|割腕|轻生|想死|吞药自尽/.test(text) &&
+    !/不想死|不会自杀|没要自杀|别想不开|打消了轻生/.test(text);
+  if (hasExtremeCrisis) {
     crisisLevel = 3;
     isCrisis = true;
-    const matched = l1Check.matches.filter((m) => !m.isDisambiguated).map((m) => m.keyword);
-    crisisSummary = `检测到明确自杀/自残/极端危机意向 (${matched.join(', ')})，需心理老师即刻介入`;
+    crisisSummary = '检测到明确自杀/自残/极端危机意向，需心理老师即刻介入';
   }
 
   if (crisisLevel === 0) {

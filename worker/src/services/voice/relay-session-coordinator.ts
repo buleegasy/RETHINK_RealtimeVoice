@@ -2,7 +2,6 @@ import type { Env } from '../../types';
 import { RealtimeGatewayAdapter } from '../../adapters/realtime-gateway-adapter';
 import { getSituationalMemory } from '../../lib/memory-store';
 import { BargeInCoordinator } from './barge-in-coordinator';
-import { CrisisHandler } from './crisis-handler';
 import { ShadowReasoningPipeline } from './shadow-reasoning-pipeline';
 import { SidebandAgent } from './sideband-agent';
 import { ShadowTurnCoordinator } from './relay/shadow-turn-coordinator';
@@ -98,13 +97,6 @@ export class RelaySessionCoordinator {
       const requestedUserId = query.userId || query.username || '';
       const sessionStartTime = Date.now();
       const coordinator = new BargeInCoordinator();
-      const crisisHandler = new CrisisHandler(
-        serverWs,
-        upstreamWs,
-        env.CRISIS_WEBHOOK_URL,
-        sessionId,
-        ctx,
-      );
 
       const currentMemory = await getSituationalMemory(env, requestedUserId);
       const studentName = currentMemory?.userName || '';
@@ -131,7 +123,6 @@ export class RelaySessionCoordinator {
         serverWs,
         upstreamWs,
         coordinator,
-        crisisHandler,
         shadowPipeline,
         openRouterConfig: { openRouterKey, openRouterBaseUrl, openRouterModel },
         isDirectLive,
@@ -178,7 +169,6 @@ export class RelaySessionCoordinator {
         serverWs,
         upstreamWs,
         coordinator,
-        crisisHandler,
         sidebandAgent,
         env,
         sessionId,
