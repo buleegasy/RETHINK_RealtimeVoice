@@ -1,10 +1,14 @@
 import type { CbtCapsule } from './types';
 import { SOMATIC_EMOTION_CAPSULES } from './capsules/somatic-emotion';
 import { ACADEMIC_RELATIONAL_CAPSULES } from './capsules/academic-relational';
+import { SLEEP_DIGITAL_CAPSULES } from './capsules/sleep-digital';
+import { SOCIAL_GROWTH_CAPSULES } from './capsules/social-growth';
 
 export const CBT_CAPSULES: CbtCapsule[] = [
   ...SOMATIC_EMOTION_CAPSULES,
   ...ACADEMIC_RELATIONAL_CAPSULES,
+  ...SLEEP_DIGITAL_CAPSULES,
+  ...SOCIAL_GROWTH_CAPSULES,
 ];
 
 /**

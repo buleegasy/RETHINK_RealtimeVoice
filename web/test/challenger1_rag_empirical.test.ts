@@ -87,9 +87,9 @@ describe('Challenger 1 Empirical Verification: Web DefaultRagProvider & Adversar
   // ---------------------------------------------------------------------------
   // 3. Full 16-Capsule Invariant & Precision Verification
   // ---------------------------------------------------------------------------
-  describe('3. 全量 16 条 CBT 胶囊硬性长度约束与召回完整度', () => {
+  describe('3. 全量 CBT 胶囊硬性长度约束与召回完整度', () => {
     it('100% 胶囊 content.length 严格 <= 50 汉字且 > 0', () => {
-      expect(ragProvider.fallbackKnowledge.length).toBe(16);
+      expect(ragProvider.fallbackKnowledge.length).toBe(28);
       for (const capsule of ragProvider.fallbackKnowledge) {
         expect(capsule.content.length).toBeGreaterThan(0);
         expect(
