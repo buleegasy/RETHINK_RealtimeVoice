@@ -1,10 +1,5 @@
 import type { FlashOptions, StructuredSessionReport } from './types';
-import {
-  MINIMAX_M3_MODEL,
-  MINIMAX_API_URL,
-  resolveReportingModel,
-  parseJsonSafe,
-} from './constants';
+import { MINIMAX_API_URL, resolveReportingModel, parseJsonSafe } from './constants';
 import { evaluateTranscriptRuleBased } from '../minimax-evaluator';
 
 export async function generateStructuredReportWithFlash(
@@ -22,16 +17,8 @@ export async function generateStructuredReportWithFlash(
     };
   }
 
-  const isMiniMaxKey =
-    options.apiKey.startsWith('sk-api--') || Boolean(options.baseUrl?.includes('minimax'));
-  const baseUrl = (
-    options.baseUrl || (isMiniMaxKey ? MINIMAX_API_URL : 'https://openrouter.ai/api/v1')
-  ).replace(/\/+$/, '');
-  const model = options.model
-    ? resolveReportingModel(options.model)
-    : isMiniMaxKey
-      ? MINIMAX_M3_MODEL
-      : resolveReportingModel();
+  const baseUrl = (options.baseUrl || MINIMAX_API_URL).replace(/\/+$/, '');
+  const model = resolveReportingModel(options.model);
   const endpoint =
     baseUrl.endsWith('/chat/completions') || baseUrl.includes('chatcompletion_v2')
       ? baseUrl
@@ -71,20 +58,13 @@ export async function generateStructuredReportWithFlash(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${options.apiKey}`,
     };
-    if (!isMiniMaxKey) {
-      headers['HTTP-Referer'] = 'https://rethink.local';
-      headers['X-Title'] = 'RETHINK Session Reporter';
-    }
 
     const reqBody: any = {
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
+      max_tokens: 2500,
     };
-    if (!isMiniMaxKey) {
-      reqBody.max_tokens = 2500;
-      reqBody.response_format = { type: 'json_object' };
-    }
 
     const res = await fetch(endpoint, {
       method: 'POST',

@@ -15,7 +15,7 @@ export function resolveReportingModel(override?: string): string {
   if (override && override !== DEEPSEEK_V4_FLASH_MODEL) {
     return override;
   }
-  return MINIMAX_TEXT_01_MODEL;
+  return MINIMAX_M3_MODEL;
 }
 
 export function parseJsonSafe<T = any>(raw: string): T {

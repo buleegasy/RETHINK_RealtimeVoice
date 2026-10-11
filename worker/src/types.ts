@@ -21,6 +21,15 @@ export interface Env {
 
 export type CrisisLevel = 0 | 1 | 2 | 3;
 
+export interface SituationRAGItem {
+  situationId: string;
+  topic: string;
+  summary50: string;
+  fullContext?: string;
+  effectiveApproaches?: string;
+  timestamp: number;
+}
+
 export interface SituationalMemory {
   userId: string;
   userName?: string;
@@ -30,6 +39,7 @@ export interface SituationalMemory {
   recentSituations?: string[];
   effectiveStrategies?: string[];
   summaryParagraph: string;
+  situations?: SituationRAGItem[];
   lastUpdated: number;
 }
 
@@ -116,4 +126,3 @@ export interface RestoreSessionPayload {
   secondary_passcode: string;
   operator_name?: string;
 }
-

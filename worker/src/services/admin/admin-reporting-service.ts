@@ -111,13 +111,9 @@ export class AdminReportingService {
           topConcerns: concernDistribution.slice(0, 3),
         },
         {
-          apiKey: env.MINIMAX_API_KEY || env.OPENROUTER_API_KEY,
-          baseUrl:
-            env.MINIMAX_BASE_URL ||
-            (env.MINIMAX_API_KEY
-              ? 'https://api.minimaxi.chat/v1/text/chatcompletion_v2'
-              : env.OPENROUTER_BASE_URL),
-          model: env.MINIMAX_API_KEY ? 'MiniMax-M3' : env.OPENROUTER_MODEL,
+          apiKey: env.MINIMAX_API_KEY,
+          baseUrl: env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat/v1/text/chatcompletion_v2',
+          model: 'MiniMax-M3',
           signal: AbortSignal.timeout(6000),
         },
       );
@@ -220,13 +216,9 @@ export class AdminReportingService {
     }
 
     const newReport = await generateStructuredReportWithFlash(transcript, {
-      apiKey: env.MINIMAX_API_KEY || env.OPENROUTER_API_KEY,
-      baseUrl:
-        env.MINIMAX_BASE_URL ||
-        (env.MINIMAX_API_KEY
-          ? 'https://api.minimaxi.chat/v1/text/chatcompletion_v2'
-          : env.OPENROUTER_BASE_URL),
-      model: env.MINIMAX_API_KEY ? 'MiniMax-M3' : env.OPENROUTER_MODEL,
+      apiKey: env.MINIMAX_API_KEY,
+      baseUrl: env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat/v1/text/chatcompletion_v2',
+      model: 'MiniMax-M3',
     });
 
     const mergedReport = {

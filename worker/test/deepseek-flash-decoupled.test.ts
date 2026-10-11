@@ -101,18 +101,14 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
   });
 
   describe('模块二：异步影子推导与记忆抽取链路', () => {
-    it('performShadowReasoning 能够结合上下文、知识库与学生意图解析结构化认知引导', async () => {
+    it('performShadowReasoning 能够结合上下文、知识库与学生意图输出极简纯文本策略指令（无“你应该”与JSON限制）', async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           choices: [
             {
               message: {
-                content: JSON.stringify({
-                  cognitiveHint: '你应该引导其列举最坏情况发生的客观概率。',
-                  extractedName: '小宇',
-                  coreConcern: '高考模考失利与亲子冲突',
-                }),
+                content: '现实矛盾拆解：将模考失利区分基础丢分与时间分配，聚焦本周错题复盘微动作。',
               },
             },
           ],
@@ -124,7 +120,7 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
         {
           history: [],
           cbtHints: ['运用去灾难化技术，检验最坏结果的发生概率与应对资源'],
-          userName: '',
+          userName: '小宇',
         },
         {
           apiKey: 'test-openrouter-key',
@@ -133,12 +129,12 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
       );
 
       expect(result).not.toBeNull();
-      expect(result?.cognitiveHint).toMatch(/^你应该/);
+      expect(result?.cognitiveHint).not.toMatch(/^你应该/);
+      expect(result?.cognitiveHint).toContain('现实矛盾拆解');
       expect(result?.extractedName).toBe('小宇');
-      expect(result?.coreConcern).toContain('模考失利');
     });
 
-    it('performShadowReasoning 在无 API Key 或网络异常时平滑回退至知识库策略', async () => {
+    it('performShadowReasoning 在无 API Key 或网络异常时平滑回退至知识库策略且不包含“你应该”前缀', async () => {
       const result = await performShadowReasoning(
         '我总觉得自己什么事都做不好',
         {
@@ -151,7 +147,7 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
       );
 
       expect(result).not.toBeNull();
-      expect(result?.cognitiveHint).toMatch(/^你应该/);
+      expect(result?.cognitiveHint).not.toMatch(/^你应该/);
       expect(result?.cognitiveHint).toContain('苏格拉底提问');
     });
   });
@@ -219,7 +215,7 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
       clearMemoryCache();
     });
 
-    it('consolidateSituationalMemoryWithLLM 应准确提炼学生个人情境与生活记忆档案', async () => {
+    it('consolidateSituationalMemoryWithLLM 应准确提炼学生个人情境并封装 50 字情境摘要与事件始末 RAG 条目', async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -239,6 +235,14 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
                   effectiveStrategies: ['认可其刻苦努力', '避免直接催促成绩', '运用去灾难化引导'],
                   summaryParagraph:
                     '小华是高三住校生，近期因数学模考失利与母亲爆发冲突，存在较大焦虑与失眠，需要温和同龄陪伴。',
+                  situations: [
+                    {
+                      topic: '数学模考失利与亲子冲突',
+                      summary50:
+                        '10月数学模考仅85分遭母亲斥责，引发严重挫败与宿舍失眠，急需温和同伴倾听共情。',
+                      effectiveApproaches: '先肯定努力与委屈，避免直戳分数，引导错题分拆',
+                    },
+                  ],
                 }),
               },
             },
@@ -273,6 +277,10 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
       expect(memory?.coreConcerns).toContain('近期数学模考断崖式下滑');
       expect(memory?.significantOthers).toContain('严格的母亲');
       expect(memory?.summaryParagraph).toContain('小华是高三住校生');
+      expect(memory?.situations).toBeDefined();
+      expect(memory?.situations?.length).toBe(1);
+      expect(memory?.situations?.[0]?.topic).toBe('数学模考失利与亲子冲突');
+      expect(memory?.situations?.[0]?.summary50).toContain('遭母亲斥责');
     });
 
     it('formatSituationalMemoryPrompt 能够精准格式化提示词以供智能体唤醒记忆', () => {
@@ -378,9 +386,11 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
       expect(ownerData.memory.userName).toBe('小B');
     });
 
-    it('简报提炼、宏观大盘与情景记忆默认解析为 MiniMax-01 最强文本模型', async () => {
+    it('简报提炼、宏观大盘与情景记忆默认锁定为 MiniMax-M3 原生接口模型', async () => {
       let requestedModel = '';
-      globalThis.fetch = vi.fn().mockImplementation(async (_url: string, opts: any) => {
+      let requestedEndpoint = '';
+      globalThis.fetch = vi.fn().mockImplementation(async (url: string, opts: any) => {
+        requestedEndpoint = url;
         const body = JSON.parse(opts.body);
         requestedModel = body.model;
         return {
@@ -407,7 +417,8 @@ describe('思考与语音解耦架构验证 (OpenRouter DeepSeek V4 Flash 认知
       await generateStructuredReportWithFlash('学生: 老师好，今天感觉还行', {
         apiKey: 'test-key',
       });
-      expect(requestedModel).toBe('minimax/minimax-01');
+      expect(requestedModel).toBe('MiniMax-M3');
+      expect(requestedEndpoint).toContain('https://api.minimaxi.chat/v1/text/chatcompletion_v2');
     });
 
     it('危机判定能无缝适配 OpenRouter Jev Decisions API 协议与 noul 概率判定', async () => {

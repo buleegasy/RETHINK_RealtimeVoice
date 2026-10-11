@@ -121,12 +121,13 @@ export async function consolidateDialogueMemory(
   env: Env,
   params: {
     userId: string;
-    openRouterKey: string | undefined;
+    apiKey?: string;
+    openRouterKey?: string;
     dialogueTurns: Array<{ role: 'user' | 'assistant'; content: string }>;
     transcriptText: string;
   },
 ): Promise<void> {
-  const { userId, openRouterKey, dialogueTurns, transcriptText } = params;
+  const { userId, apiKey, openRouterKey, dialogueTurns, transcriptText } = params;
   const existingMemory = await getSituationalMemory(env, userId);
 
   let turns = dialogueTurns;
@@ -147,9 +148,9 @@ export async function consolidateDialogueMemory(
 
   try {
     const consolidated = await consolidateSituationalMemoryWithLLM(userId, existingMemory, turns, {
-      apiKey: openRouterKey,
-      baseUrl: env.OPENROUTER_BASE_URL,
-      model: env.OPENROUTER_MODEL || atob('Z29vZ2xlL2dlbWluaS0zLjgtZmxhc2g='),
+      apiKey: apiKey || openRouterKey || env.MINIMAX_API_KEY,
+      baseUrl: env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat/v1/text/chatcompletion_v2',
+      model: 'MiniMax-M3',
     });
     if (consolidated) {
       await saveSituationalMemory(env, consolidated);

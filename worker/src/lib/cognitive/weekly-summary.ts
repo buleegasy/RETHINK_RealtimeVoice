@@ -1,5 +1,5 @@
 import type { FlashOptions } from './types';
-import { MINIMAX_M3_MODEL, MINIMAX_API_URL, resolveReportingModel } from './constants';
+import { MINIMAX_API_URL, resolveReportingModel } from './constants';
 
 export async function generateWeeklySummaryDeepSeekV4Flash(
   stats: {
@@ -30,16 +30,8 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
     return fallback;
   }
 
-  const isMiniMaxKey =
-    options.apiKey.startsWith('sk-api--') || Boolean(options.baseUrl?.includes('minimax'));
-  const baseUrl = (
-    options.baseUrl || (isMiniMaxKey ? MINIMAX_API_URL : 'https://openrouter.ai/api/v1')
-  ).replace(/\/+$/, '');
-  const model = options.model
-    ? resolveReportingModel(options.model)
-    : isMiniMaxKey
-      ? MINIMAX_M3_MODEL
-      : resolveReportingModel();
+  const baseUrl = (options.baseUrl || MINIMAX_API_URL).replace(/\/+$/, '');
+  const model = resolveReportingModel(options.model);
   const endpoint =
     baseUrl.endsWith('/chat/completions') || baseUrl.includes('chatcompletion_v2')
       ? baseUrl
@@ -63,19 +55,13 @@ export async function generateWeeklySummaryDeepSeekV4Flash(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${options.apiKey}`,
     };
-    if (!isMiniMaxKey) {
-      headers['HTTP-Referer'] = 'https://rethink.local';
-      headers['X-Title'] = 'RETHINK Weekly Summary';
-    }
 
     const reqBody: any = {
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
+      max_tokens: 120,
     };
-    if (!isMiniMaxKey) {
-      reqBody.max_tokens = 120;
-    }
 
     const res = await fetch(endpoint, {
       method: 'POST',

@@ -1,10 +1,7 @@
 import type { Env } from '../../types';
 import { SessionRepository } from '../../repositories/session-repository';
 import { sendCrisisWebhook } from '../../lib/webhook-sender';
-import {
-  generateStructuredReportWithFlash,
-  DEEPSEEK_V4_FLASH_MODEL,
-} from '../../lib/deepseek-flash';
+import { generateStructuredReportWithFlash } from '../../lib/deepseek-flash';
 import {
   resolveEffectiveStage,
   encryptRealIdentityIfCrisis,
@@ -153,26 +150,13 @@ export class SessionReporter {
       }
     }
 
-    const reportingKey =
-      env.MINIMAX_API_KEY ||
-      env.OPENROUTER_API_KEY ||
-      env.REALTIME_UPSTREAM_KEY ||
-      env.MINIMAX_REALTIME_KEY ||
-      env.APIYI_API_KEY;
+    const reportingKey = env.MINIMAX_API_KEY;
 
-    const isMiniMax = Boolean(
-      reportingKey && (reportingKey === env.MINIMAX_API_KEY || reportingKey.startsWith('sk-api--')),
-    );
-
-    // 1. 深度评估简报生成
+    // 1. 深度评估简报生成 (强制 MiniMax-M3 原生接口)
     const report = await generateStructuredReportWithFlash(transcriptText, {
       apiKey: reportingKey,
-      baseUrl:
-        env.MINIMAX_BASE_URL ||
-        (isMiniMax
-          ? 'https://api.minimaxi.chat/v1/text/chatcompletion_v2'
-          : env.OPENROUTER_BASE_URL),
-      model: isMiniMax ? 'MiniMax-M3' : env.OPENROUTER_MODEL || DEEPSEEK_V4_FLASH_MODEL,
+      baseUrl: env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat/v1/text/chatcompletion_v2',
+      model: 'MiniMax-M3',
     });
 
     const isCrisis =
