@@ -56,6 +56,8 @@ export class ShadowTurnCoordinator {
       this.triggerTurnResponse(upstreamWs, coordinator, currentSeq, signal, null);
     }
 
+    let currentRagRecall: any = null;
+
     shadowPipeline
       ?.execute({
         userText,
@@ -67,6 +69,9 @@ export class ShadowTurnCoordinator {
         onExtractedName: (name: string) => {
           if (!getStudentName?.()) setStudentName?.(name);
         },
+        onRagRecall: (recall: any) => {
+          currentRagRecall = recall;
+        },
       })
       ?.then((hint: string) => {
         if (signal.aborted || !coordinator.isValid(currentSeq)) return;
@@ -77,6 +82,7 @@ export class ShadowTurnCoordinator {
               turnSequence: currentSeq,
               userText,
               cognitiveHint: hint,
+              ragRecall: currentRagRecall,
               fallback: !hint,
               timestamp: Date.now(),
             }),
@@ -143,6 +149,8 @@ export class ShadowTurnCoordinator {
       { once: true },
     );
 
+    let currentRagRecall: any = null;
+
     const shadowPromise = shadowPipeline
       ?.execute({
         userText,
@@ -153,6 +161,9 @@ export class ShadowTurnCoordinator {
         isTurnValid: () => coordinator.isValid(currentSeq) && !hasResponded,
         onExtractedName: (name: string) => {
           if (!getStudentName?.()) setStudentName?.(name);
+        },
+        onRagRecall: (recall: any) => {
+          currentRagRecall = recall;
         },
       })
       ?.catch(() => null);
@@ -170,6 +181,7 @@ export class ShadowTurnCoordinator {
             turnSequence: currentSeq,
             userText,
             cognitiveHint: hint,
+            ragRecall: currentRagRecall,
             durationMs,
             fallback: !hint,
             timestamp: Date.now(),

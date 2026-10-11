@@ -122,7 +122,7 @@ export async function negotiateWebRtcOffer(
     const endpoint = `${origin}${liveSessionsPath}`;
 
     const rawSession = (sessionParams?.session as Record<string, unknown>) || {};
-    const voice = (rawSession.voice as string) || 'marin';
+    const voice = (rawSession.voice as string) || 'juniper';
     const sessionConfig: Record<string, unknown> = {
       model: config.upstreamModel || atob('Z3B0LWxpdmUtMQ=='),
       audio: {

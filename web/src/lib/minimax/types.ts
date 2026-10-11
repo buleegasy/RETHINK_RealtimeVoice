@@ -67,6 +67,7 @@ export interface MiniMaxClientCallbacks {
     turnSequence: number;
     userText: string;
     cognitiveHint: string | null;
+    ragRecall?: any;
     durationMs: number;
     fallback: boolean;
     timestamp: number;

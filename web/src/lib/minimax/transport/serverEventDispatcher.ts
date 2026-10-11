@@ -249,6 +249,7 @@ export class ServerEventDispatcher {
         userText: String((event as any).userText || ''),
         cognitiveHint:
           typeof (event as any).cognitiveHint === 'string' ? (event as any).cognitiveHint : null,
+        ragRecall: (event as any).ragRecall || null,
         durationMs: Number((event as any).durationMs || 0),
         fallback: Boolean((event as any).fallback),
         timestamp: Number((event as any).timestamp || Date.now()),

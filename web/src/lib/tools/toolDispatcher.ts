@@ -1,6 +1,7 @@
 import type { IRagProvider } from '../pipelines/rag/types';
 import type { CBTStage } from '../../types';
 import { CbtStateMachine } from '../cbt/cbtStateMachine';
+import { useTelemetryStore } from '../../store/telemetryStore';
 
 export interface ToolDispatcherOptions {
   ragProvider: IRagProvider;
@@ -29,13 +30,35 @@ export class RealtimeToolDispatcher {
     return this.fsm;
   }
 
-  public async handleToolCall(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  public async handleToolCall(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     console.log(`[ToolDispatcher] 触发工具调用: ${name}`, args);
 
     switch (name) {
       case 'search_knowledge_base': {
         const query = typeof args.query === 'string' ? args.query : '';
+        const startTime = Date.now();
         const chunks = await this.ragProvider.retrieve(query, { topK: 2 });
+        const durationMs = Date.now() - startTime;
+        const topChunk = chunks[0];
+        try {
+          useTelemetryStore.getState().addRagRetrieval({
+            query,
+            status: chunks.length > 0 ? 'matched' : 'no_relevant_context',
+            score: topChunk?.score || 0,
+            topic: topChunk?.title,
+            category: topChunk?.category,
+            empathyLead: topChunk?.empathyLead,
+            socraticPivot: topChunk?.socraticPivot,
+            tabooPhrases: topChunk?.tabooPhrases,
+            conciseDirective: this.ragProvider.formatContext(chunks),
+            durationMs,
+            timestamp: Date.now(),
+            source: 'live_tool',
+          });
+        } catch {}
         return {
           status: 'success',
           reference_knowledge: this.ragProvider.formatContext(chunks),
@@ -49,7 +72,17 @@ export class RealtimeToolDispatcher {
           const res = this.fsm.transition(stage, reason);
           if (res.success) {
             this.onStageChange?.(res.stage, res.reason);
-            return { status: 'success', current_stage: res.stage, previous_stage: res.previousStage };
+            try {
+              useTelemetryStore.getState().updateCbtFsmState({
+                ...this.fsm.getSnapshot(),
+                history: [...this.fsm.getHistory()],
+              });
+            } catch {}
+            return {
+              status: 'success',
+              current_stage: res.stage,
+              previous_stage: res.previousStage,
+            };
           } else {
             console.warn(`[ToolDispatcher] 状态机拦截转移: ${stage}, 原因: ${res.reason}`);
             return {
@@ -68,7 +101,17 @@ export class RealtimeToolDispatcher {
         const triggerText = (args.trigger_text as string) || '';
         this.fsm.escalateCrisis(triggerText || severity);
         this.onCrisisEscalate?.(severity, triggerText);
-        return { status: 'acknowledged', action: 'crisis_intervention_triggered', current_stage: 'Crisis_Escalation' };
+        try {
+          useTelemetryStore.getState().updateCbtFsmState({
+            ...this.fsm.getSnapshot(),
+            history: [...this.fsm.getHistory()],
+          });
+        } catch {}
+        return {
+          status: 'acknowledged',
+          action: 'crisis_intervention_triggered',
+          current_stage: 'Crisis_Escalation',
+        };
       }
 
       case 'save_user_info': {
@@ -87,7 +130,7 @@ export class RealtimeToolDispatcher {
 
   public async dispatch(
     toolCall: { name: string; callId: string; args: Record<string, unknown> },
-    client?: { sendToolOutput: (callId: string, output: Record<string, unknown>) => void } | null
+    client?: { sendToolOutput: (callId: string, output: Record<string, unknown>) => void } | null,
   ): Promise<Record<string, unknown>> {
     const output = await this.handleToolCall(toolCall.name, toolCall.args);
     if (client && toolCall.callId) {

@@ -49,6 +49,8 @@ export class SidebandDispatcher {
     const { shadowPipeline, serverWs, coordinator, situationalMemory } = this.config;
     const startTime = Date.now();
 
+    let currentRagRecall: any = null;
+
     try {
       const hint = await shadowPipeline.execute({
         userText,
@@ -58,6 +60,9 @@ export class SidebandDispatcher {
         signal,
         isTurnValid: () => coordinator.isValid(seq) && !signal.aborted,
         onExtractedName,
+        onRagRecall: (recall: any) => {
+          currentRagRecall = recall;
+        },
       });
 
       if (signal.aborted || !coordinator.isValid(seq)) return;
@@ -69,6 +74,7 @@ export class SidebandDispatcher {
             turnSequence: seq,
             userText,
             cognitiveHint: hint,
+            ragRecall: currentRagRecall,
             durationMs: Date.now() - startTime,
             fallback: !hint,
             timestamp: Date.now(),

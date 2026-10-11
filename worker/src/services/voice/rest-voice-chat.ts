@@ -99,7 +99,7 @@ export async function handleRestChat(
 1. 平级沟通：以同校同学身份平等交流，不居高临下说教，不刻意卑微讨好。
 2. 聚焦心事：专注倾听与安抚学业、人际及校园烦恼，坚决回避无关闲聊。
 3. 自然口语：全程使用贴近高中生日常的自然中文口语交流，绝对严禁输出任何 Markdown 格式或特殊符号。
-4. 极简节奏：每次回复严格控制在 1-2 句话以内（40字以内），语速稍快轻快利落，倾听多于说教。
+4. 对话节奏：贴近自然口语，语速稍快轻快利落，不要长篇大论，倾听多于说教。
 5. 信息合规：绝对禁止提及任何模型名称、算法或所属公司信息。
 ${cbtGuideSection}`;
 
@@ -147,7 +147,7 @@ ${cbtGuideSection}`;
       audioBase64 = await synthesizeRealtimeAudio({
         text: replyText,
         apiKey: upstreamKey,
-        voice: 'maple',
+        voice: 'juniper',
         timeoutMs: 12000,
         baseUrl: upstreamBase,
       });

@@ -69,7 +69,7 @@ export function buildGreetingEvents(customGreeting?: string): Record<string, unk
         content: [
           {
             type: 'input_text',
-            text: '（通话已建立，请立刻向来访者致以简短开场问候）',
+            text: '（通话已建立，请立刻向来访同学致以简短自然的开场问候）',
           },
         ],
       },
@@ -78,7 +78,9 @@ export function buildGreetingEvents(customGreeting?: string): Record<string, unk
       type: 'response.create',
       response: {
         modalities: ['audio', 'text'],
-        instructions: `你必须严格只字面说：“${greeting}”，绝对禁止添加任何多余的开场白、问候语或解释！`,
+        instructions: customGreeting
+          ? `你必须严格只字面说：“${customGreeting}”，绝对禁止添加任何多余的开场白、问候语或解释！`
+          : `请根据你的开场问候准则向同学致以第一句问候：若已有过往记忆可自然说“Hi，上次我们聊到……这类”，若首次来访请说“${greeting}”。切忌死板模板，贴近自然口语，不要长篇大论，语速稍快、轻快利落，说完立即保持倾听。`,
       },
     },
   ];

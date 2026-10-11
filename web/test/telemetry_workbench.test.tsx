@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useTelemetryStore } from '../src/store/telemetryStore';
 import { useBoothStore } from '../src/store/boothStore';
 import { useModeStore } from '../src/store/modeStore';
@@ -254,5 +254,158 @@ describe('遥测工作台与影子大脑数据流测试 (Telemetry Workbench & S
     expect(feed.length).toBe(2);
     expect(feed[0].text).toBe('终态校正文本');
     expect(feed[1].text).toBe('回答文本');
+  });
+
+  it('useTelemetryStore 应正确聚合 RAG 知识检索日志并在影子大脑带有 ragRecall 时自动联动', () => {
+    const store = useTelemetryStore.getState();
+    store.clearTelemetry();
+
+    // 1. 手动添加 RAG 日志
+    store.addRagRetrieval({
+      query: '我考前容易手抖慌张',
+      status: 'matched',
+      score: 0.88,
+      topic: '心慌发抖感官着陆缓解法',
+      category: 'somatic',
+      empathyLead: '心跳加速确实会让人发慌',
+      socraticPivot: '手掌贴在胸口能感受到温热吗',
+      tabooPhrases: ['别抖了看着烦'],
+      durationMs: 35,
+      timestamp: Date.now(),
+      source: 'manual_test',
+    });
+
+    let state = useTelemetryStore.getState();
+    expect(state.ragRetrievals.length).toBe(1);
+    expect(state.latestRagRetrieval?.topic).toBe('心慌发抖感官着陆缓解法');
+    expect(state.latestRagRetrieval?.score).toBe(0.88);
+
+    // 2. 影子大脑带 ragRecall 自动注入
+    store.addShadowDirective({
+      turnSequence: 2,
+      userText: '我喘不上气好难受',
+      cognitiveHint: '来访者疑似过度通气，请安抚',
+      durationMs: 200,
+      fallback: false,
+      timestamp: Date.now(),
+      ragRecall: {
+        status: 'matched',
+        topic: '过度通气箱式呼吸法',
+        category: 'somatic',
+        score: 0.92,
+        empathyGuideline: '听得出来你呼吸急促',
+        socraticPivot: '跟着慢吸四秒再呼四秒好吗',
+        tabooPhrases: ['别大惊小怪'],
+      },
+    });
+
+    state = useTelemetryStore.getState();
+    expect(state.ragRetrievals.length).toBe(2);
+    expect(state.latestRagRetrieval?.topic).toBe('过度通气箱式呼吸法');
+    expect(state.latestRagRetrieval?.source).toBe('live_shadow');
+  });
+
+  it('useTelemetryStore 应正确同步 CBT 状态机快照与情绪效价负向锁定状态', () => {
+    const store = useTelemetryStore.getState();
+    store.clearTelemetry();
+
+    store.updateCbtFsmState({
+      stage: 'Active_Listening',
+      turnsInStage: 3,
+      totalTurns: 5,
+      fallbackCooldown: 1,
+      isCrisis: false,
+      emotionalValence: -0.65,
+      cognitiveExposure: 0.35,
+      isEmotionallyLocked: true,
+      history: [
+        {
+          from: 'Pre_Info_Collection',
+          to: 'Active_Listening',
+          turn: 2,
+          timestamp: Date.now(),
+          reason: '信息采集完成推进',
+        },
+      ],
+    });
+
+    const state = useTelemetryStore.getState();
+    expect(state.cbtFsmState.stage).toBe('Active_Listening');
+    expect(state.cbtFsmState.emotionalValence).toBe(-0.65);
+    expect(state.cbtFsmState.isEmotionallyLocked).toBe(true);
+    expect(state.cbtFsmState.history.length).toBe(1);
+  });
+
+  it('TestWorkbench 应正常渲染 RAG 召回与 CBT 状态机 4 大工作台选项卡', () => {
+    render(<TestWorkbench />);
+
+    expect(screen.getByText('RAG 知识召回')).toBeInTheDocument();
+    expect(screen.getByText('CBT 状态机')).toBeInTheDocument();
+    expect(screen.getByText('声学与传输')).toBeInTheDocument();
+    expect(screen.getByText('事件与原始帧')).toBeInTheDocument();
+    expect(screen.getByText('交互式 RAG 靶向评测沙盒')).toBeInTheDocument();
+  });
+
+  it('点击选项卡能切换各面板视图并维持沙盒与状态机展示', () => {
+    render(<TestWorkbench />);
+
+    const fsmTabBtn = screen.getByText('CBT 状态机');
+    fireEvent.click(fsmTabBtn);
+
+    expect(screen.getByText('CBT 状态机流转拓扑 (Cognitive State Machine)')).toBeInTheDocument();
+    expect(screen.getByText('情绪效价与暴露度动力学 (Dynamics & Watchdog)')).toBeInTheDocument();
+
+    const acousticTabBtn = screen.getByText('声学与传输');
+    fireEvent.click(acousticTabBtn);
+    expect(screen.getByText('音频抖动缓冲与流式播发 (Jitter Buffer)')).toBeInTheDocument();
+
+    const eventsTabBtn = screen.getByText('事件与原始帧');
+    fireEvent.click(eventsTabBtn);
+    expect(screen.getByText('端到端遥测诊断流')).toBeInTheDocument();
+    expect(screen.getByText('复制 JSON')).toBeInTheDocument();
+  });
+
+  it('在 RAG 沙盒中执行查询应调用检索器并展示命中的 CBT 胶囊与打分', async () => {
+    render(<TestWorkbench />);
+
+    const input = screen.getByPlaceholderText(/输入来访学生诉求/);
+    fireEvent.change(input, { target: { value: '手抖身体发抖心跳过速' } });
+
+    const searchBtn = screen.getByRole('button', { name: /测试检索/ });
+    fireEvent.click(searchBtn);
+
+    expect(await screen.findByText(/心慌发抖/)).toBeInTheDocument();
+    expect(useTelemetryStore.getState().ragRetrievals.length).toBeGreaterThan(0);
+    expect(useTelemetryStore.getState().latestRagRetrieval?.source).toBe('manual_test');
+  });
+
+  it('点击 RAG 预设用例按钮能自动填充并触发靶向检索', async () => {
+    render(<TestWorkbench />);
+
+    const presetBtn = screen.getByRole('button', { name: '过度通气' });
+    fireEvent.click(presetBtn);
+
+    await waitFor(() => {
+      const latest = useTelemetryStore.getState().latestRagRetrieval;
+      expect(latest?.topic).toContain('过度通气');
+    });
+  });
+
+  it('CBT 状态机面板在负向情绪效价时应展示负向锁定告警', () => {
+    useTelemetryStore.getState().updateCbtFsmState({
+      stage: 'Active_Listening',
+      emotionalValence: -0.75,
+      cognitiveExposure: 0.2,
+      isEmotionallyLocked: true,
+    });
+
+    render(<TestWorkbench />);
+
+    const fsmTabBtn = screen.getByText('CBT 状态机');
+    fireEvent.click(fsmTabBtn);
+
+    expect(screen.getAllByText(/负向锁定/)[0]).toBeInTheDocument();
+    expect(screen.getAllByText(/-0.75/)[0]).toBeInTheDocument();
+    expect(screen.getByText(/强制锁定积极倾听阶段/)).toBeInTheDocument();
   });
 });

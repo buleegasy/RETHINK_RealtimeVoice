@@ -98,7 +98,7 @@ voiceRouter.post('/webrtc/session', async (c) => {
       relayOnly: true,
       sessionConfig: {
         model,
-        voice: body.voice || 'marin',
+        voice: body.voice || 'juniper',
       },
     });
   }
@@ -121,7 +121,7 @@ voiceRouter.post('/webrtc/session', async (c) => {
     callsUrl: ephemeral.callsUrl,
     sessionConfig: {
       model,
-      voice: body.voice || 'marin',
+      voice: body.voice || 'juniper',
     },
   });
 });

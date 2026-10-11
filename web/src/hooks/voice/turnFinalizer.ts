@@ -29,11 +29,16 @@ export function finalizeUserTurn(
   });
 
   if (toolDispatcher) {
-    const pacing = toolDispatcher.getFsm().recordTurn('user');
+    const fsm = toolDispatcher.getFsm();
+    const pacing = fsm.recordTurn('user');
     if (pacing.autoPromotedStage) {
       useBoothStore.getState().setCBTStage(pacing.autoPromotedStage);
       useTelemetryStore.getState().setCbtStage(pacing.autoPromotedStage);
     }
+    useTelemetryStore.getState().updateCbtFsmState({
+      ...fsm.getSnapshot(),
+      history: [...fsm.getHistory()],
+    });
   }
 
   return { userTurnId: userSeg.id, userTurnTimestamp: userSeg.timestamp };

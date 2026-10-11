@@ -7,6 +7,18 @@ function generateTelemetryId(prefix: string): string {
   return `${prefix}_${Date.now()}`;
 }
 
+export interface RagRecallData {
+  status: 'matched' | 'no_relevant_context';
+  category?: string;
+  topic?: string;
+  score?: number;
+  empathyGuideline?: string;
+  socraticPivot?: string;
+  tabooReminder?: string;
+  tabooPhrases?: string[];
+  conciseDirective?: string;
+}
+
 export interface ShadowDirectiveLog {
   id: string;
   turnSequence: number;
@@ -15,6 +27,44 @@ export interface ShadowDirectiveLog {
   durationMs: number;
   fallback: boolean;
   timestamp: number;
+  ragRecall?: RagRecallData | null;
+}
+
+export interface RagRetrievalLog {
+  id: string;
+  turnSequence?: number;
+  query: string;
+  status: 'matched' | 'no_relevant_context';
+  score: number;
+  topic?: string;
+  category?: string;
+  empathyLead?: string;
+  socraticPivot?: string;
+  tabooPhrases?: string[];
+  conciseDirective?: string;
+  durationMs: number;
+  timestamp: number;
+  source: 'live_shadow' | 'live_tool' | 'manual_test';
+}
+
+export interface CbtFsmTransitionLog {
+  from: string;
+  to: string;
+  turn: number;
+  timestamp: number;
+  reason?: string;
+}
+
+export interface CbtFsmTelemetryState {
+  stage: string;
+  turnsInStage: number;
+  totalTurns: number;
+  fallbackCooldown: number;
+  isCrisis: boolean;
+  emotionalValence: number;
+  cognitiveExposure: number;
+  isEmotionallyLocked: boolean;
+  history: CbtFsmTransitionLog[];
 }
 
 export interface LiveTranscriptItem {
@@ -23,6 +73,9 @@ export interface LiveTranscriptItem {
   text: string;
   timestamp: number;
   isFinal: boolean;
+  cbtStage?: string;
+  ragTopic?: string;
+  shadowHint?: string | null;
 }
 
 export interface JitterMetricsData {
@@ -42,10 +95,25 @@ export interface SafetyCheckLog {
   timestamp: number;
 }
 
+export interface WebRtcStatsData {
+  connectionState: string;
+  iceConnectionState: string;
+  dataChannelState: string;
+  packetsLost?: number;
+  audioBitrateKbps?: number;
+}
+
 export interface TelemetryState {
   // 影子大脑实时状态
   latestShadowDirective: ShadowDirectiveLog | null;
   shadowDirectives: ShadowDirectiveLog[];
+
+  // RAG 知识检索与干预胶囊日志
+  latestRagRetrieval: RagRetrievalLog | null;
+  ragRetrievals: RagRetrievalLog[];
+
+  // CBT 状态机与情绪动力学快照
+  cbtFsmState: CbtFsmTelemetryState;
 
   // 语音转写双轨实时流
   streamingUserText: string;
@@ -60,12 +128,15 @@ export interface TelemetryState {
   lastShadowDurationMs: number;
   turnCount: number;
 
-  // 音频抖动缓冲 (Jitter Buffer)
+  // 音频抖动缓冲 (Jitter Buffer) 与声学管线
   jitter: JitterMetricsData;
   inputAudioLevel: number;
   outputAudioLevel: number;
   totalAudioChunks: number;
   totalBargeIns: number;
+
+  // WebRTC 链路细节
+  webRtcStats: WebRtcStatsData;
 
   // 危机与系统状态
   latestSafetyCheck: SafetyCheckLog | null;
@@ -77,6 +148,9 @@ export interface TelemetryState {
 
   // Actions
   addShadowDirective: (directive: Omit<ShadowDirectiveLog, 'id'>) => void;
+  addRagRetrieval: (log: Omit<RagRetrievalLog, 'id'>) => void;
+  updateCbtFsmState: (fsm: Partial<CbtFsmTelemetryState>) => void;
+  updateWebRtcStats: (stats: Partial<WebRtcStatsData>) => void;
   setStreamingUserText: (text: string) => void;
   setStreamingAssistantText: (text: string) => void;
   appendFinalTranscript: (
@@ -107,9 +181,32 @@ const initialJitter: JitterMetricsData = {
   rebufferSec: 0.02,
 };
 
+const initialCbtFsm: CbtFsmTelemetryState = {
+  stage: 'Active_Listening',
+  turnsInStage: 0,
+  totalTurns: 0,
+  fallbackCooldown: 0,
+  isCrisis: false,
+  emotionalValence: 0.0,
+  cognitiveExposure: 0.0,
+  isEmotionallyLocked: false,
+  history: [],
+};
+
+const initialWebRtcStats: WebRtcStatsData = {
+  connectionState: 'idle',
+  iceConnectionState: 'idle',
+  dataChannelState: 'closed',
+};
+
 export const useTelemetryStore = create<TelemetryState>((set) => ({
   latestShadowDirective: null,
   shadowDirectives: [],
+
+  latestRagRetrieval: null,
+  ragRetrievals: [],
+
+  cbtFsmState: initialCbtFsm,
 
   streamingUserText: '',
   streamingAssistantText: '',
@@ -128,6 +225,8 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
   totalAudioChunks: 0,
   totalBargeIns: 0,
 
+  webRtcStats: initialWebRtcStats,
+
   latestSafetyCheck: null,
   activeCbtStage: 'Active_Listening',
   duplexPhase: 'idle',
@@ -141,13 +240,73 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
         ...directive,
         id: generateTelemetryId('shadow'),
       };
+      const updatedShadows = [newItem, ...state.shadowDirectives].slice(0, 50);
+
+      // 若携带 RAG 召回信息，同步汇聚至 RAG 召回流水
+      let updatedRag = state.ragRetrievals;
+      let latestRag = state.latestRagRetrieval;
+      if (directive.ragRecall) {
+        const ragItem: RagRetrievalLog = {
+          id: generateTelemetryId('rag'),
+          turnSequence: directive.turnSequence,
+          query: directive.userText,
+          status: directive.ragRecall.status,
+          score: directive.ragRecall.score ?? 0.85,
+          topic: directive.ragRecall.topic,
+          category: directive.ragRecall.category,
+          empathyLead: directive.ragRecall.empathyGuideline,
+          socraticPivot: directive.ragRecall.socraticPivot,
+          tabooPhrases: directive.ragRecall.tabooPhrases,
+          conciseDirective: directive.ragRecall.conciseDirective,
+          durationMs: Math.max(10, Math.round(directive.durationMs * 0.25)),
+          timestamp: directive.timestamp,
+          source: 'live_shadow',
+        };
+        latestRag = ragItem;
+        updatedRag = [ragItem, ...state.ragRetrievals].slice(0, 50);
+      }
+
       return {
         latestShadowDirective: newItem,
-        shadowDirectives: [newItem, ...state.shadowDirectives].slice(0, 50),
+        shadowDirectives: updatedShadows,
+        latestRagRetrieval: latestRag,
+        ragRetrievals: updatedRag,
         lastShadowDurationMs: directive.durationMs,
         turnCount: Math.max(state.turnCount, directive.turnSequence),
       };
     }),
+
+  addRagRetrieval: (log) =>
+    set((state) => {
+      const newItem: RagRetrievalLog = {
+        ...log,
+        id: generateTelemetryId('rag'),
+      };
+      return {
+        latestRagRetrieval: newItem,
+        ragRetrievals: [newItem, ...state.ragRetrievals].slice(0, 50),
+      };
+    }),
+
+  updateCbtFsmState: (fsm) =>
+    set((state) => {
+      const merged: CbtFsmTelemetryState = {
+        ...state.cbtFsmState,
+        ...fsm,
+      };
+      return {
+        cbtFsmState: merged,
+        activeCbtStage: merged.stage || state.activeCbtStage,
+      };
+    }),
+
+  updateWebRtcStats: (stats) =>
+    set((state) => ({
+      webRtcStats: {
+        ...state.webRtcStats,
+        ...stats,
+      },
+    })),
 
   setStreamingUserText: (text) => set({ streamingUserText: text }),
   setStreamingAssistantText: (text) => set({ streamingAssistantText: text }),
@@ -159,6 +318,9 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
         ...item,
         id,
         isFinal: true,
+        cbtStage: item.cbtStage || state.activeCbtStage,
+        ragTopic: item.ragTopic || state.latestRagRetrieval?.topic,
+        shadowHint: item.shadowHint || state.latestShadowDirective?.cognitiveHint,
       };
       const existingIdx = state.transcriptFeed.findIndex((f) => f.id === id);
       let list: LiveTranscriptItem[];
@@ -209,7 +371,14 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
   incrementBargeIns: () => set((state) => ({ totalBargeIns: state.totalBargeIns + 1 })),
 
   setSafetyCheck: (check) => set({ latestSafetyCheck: check }),
-  setCbtStage: (stage) => set({ activeCbtStage: stage }),
+  setCbtStage: (stage) =>
+    set((state) => ({
+      activeCbtStage: stage,
+      cbtFsmState: {
+        ...state.cbtFsmState,
+        stage,
+      },
+    })),
   setDuplexPhase: (phase) => set({ duplexPhase: phase }),
   setIsConnected: (connected) => set({ isConnected: connected }),
   setActiveTransport: (activeTransport) => set({ activeTransport }),
@@ -219,6 +388,10 @@ export const useTelemetryStore = create<TelemetryState>((set) => ({
     set({
       latestShadowDirective: null,
       shadowDirectives: [],
+      latestRagRetrieval: null,
+      ragRetrievals: [],
+      cbtFsmState: initialCbtFsm,
+      webRtcStats: initialWebRtcStats,
       streamingUserText: '',
       streamingAssistantText: '',
       transcriptFeed: [],

@@ -108,7 +108,7 @@ describe('云端直连 Live 协议适配与网关层单元测试 (Direct Live Re
     expect(session.instructions).toContain('小李同学');
     expect(session.audio.format.type).toBe('audio/pcm');
     expect(session.audio.format.rate).toBe(24000);
-    expect(session.audio.output.voice).toBe('marin');
+    expect(session.audio.output.voice).toBe('juniper');
     expect(session.delegation.type).toBe('client');
     // 测试未提供指令时的默认人设提示词兜底
     const defaultPayload = RealtimeGatewayAdapter.buildSessionStartPayload(

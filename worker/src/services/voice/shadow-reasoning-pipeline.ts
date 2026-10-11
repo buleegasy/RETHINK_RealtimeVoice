@@ -36,6 +36,7 @@ export class ShadowReasoningPipeline {
     signal: AbortSignal;
     isTurnValid: () => boolean;
     onExtractedName?: (name: string) => void;
+    onRagRecall?: (recall: any) => void;
   }): Promise<string | null> {
     const {
       userText,
@@ -45,10 +46,14 @@ export class ShadowReasoningPipeline {
       signal,
       isTurnValid,
       onExtractedName,
+      onRagRecall,
     } = params;
 
     try {
       const hintObj = await this.retriever.getStrategyHint(userText, { topK: 1 });
+      if (hintObj && onRagRecall) {
+        onRagRecall(hintObj);
+      }
       const cbtHints = hintObj?.conciseDirective ? [hintObj.conciseDirective] : [];
 
       const reasoning = await performShadowReasoning(

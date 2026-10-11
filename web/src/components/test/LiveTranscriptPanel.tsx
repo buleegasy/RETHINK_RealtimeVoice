@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radio } from 'lucide-react';
+import { BookOpen, Cpu, Radio } from 'lucide-react';
 import { useTelemetryStore } from '../../store/telemetryStore';
 
 export const LiveTranscriptPanel: React.FC = () => {
@@ -73,6 +73,12 @@ export const LiveTranscriptPanel: React.FC = () => {
                 <span>{item.role === 'user' ? '学生来访者' : 'Re-think AI'}</span>
                 <span>•</span>
                 <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+                {item.cbtStage && (
+                  <>
+                    <span>•</span>
+                    <span className="text-cyan-400">{item.cbtStage}</span>
+                  </>
+                )}
               </div>
               <div
                 className={`max-w-[85%] rounded-lg px-3.5 py-2 text-xs leading-relaxed ${
@@ -81,7 +87,27 @@ export const LiveTranscriptPanel: React.FC = () => {
                     : 'bg-slate-800/80 border border-slate-700/80 text-slate-100'
                 }`}
               >
-                {item.text}
+                <div>{item.text}</div>
+                {/* 关联的 RAG 胶囊或影子大脑指导元数据标签 */}
+                {(item.ragTopic || item.shadowHint) && (
+                  <div className="mt-1.5 pt-1.5 border-t border-slate-700/50 flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
+                    {item.ragTopic && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-cyan-950/60 text-cyan-300 border border-cyan-800/50">
+                        <BookOpen className="w-2.5 h-2.5" />
+                        {item.ragTopic}
+                      </span>
+                    )}
+                    {item.shadowHint && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-800/50 truncate max-w-[200px]"
+                        title={item.shadowHint}
+                      >
+                        <Cpu className="w-2.5 h-2.5" />
+                        认知指导已注入
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))

@@ -118,6 +118,12 @@ export function useVoiceSession() {
         },
       });
 
+      const initialSnapshot = toolDispatcherRef.current.getFsm().getSnapshot();
+      useTelemetryStore.getState().updateCbtFsmState({
+        ...initialSnapshot,
+        history: [],
+      });
+
       const clientCallbacks = buildVoiceClientCallbacks({
         audioGraph,
         transcriptionRef,

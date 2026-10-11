@@ -15,7 +15,12 @@ export function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-export function createWavHeader(dataLen: number, sampleRate = 24000, channels = 1, bitsPerSample = 16): Uint8Array {
+export function createWavHeader(
+  dataLen: number,
+  sampleRate = 24000,
+  channels = 1,
+  bitsPerSample = 16,
+): Uint8Array {
   const buffer = new ArrayBuffer(44);
   const view = new DataView(buffer);
 
@@ -72,11 +77,18 @@ export async function generateMiniMaxChatReply(options: {
   model?: string;
   baseUrl?: string;
 }): Promise<string> {
-  const { messages, apiKey, model = atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx'), baseUrl = 'https://api.apiyi.com/v1' } = options;
+  const {
+    messages,
+    apiKey,
+    model = atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx'),
+    baseUrl = 'https://api.apiyi.com/v1',
+  } = options;
   if (!apiKey) return '';
 
   const cleanUrl = stripTrailingSlashes(baseUrl);
-  const endpoint = cleanUrl.endsWith('/chat/completions') ? cleanUrl : `${cleanUrl}/chat/completions`;
+  const endpoint = cleanUrl.endsWith('/chat/completions')
+    ? cleanUrl
+    : `${cleanUrl}/chat/completions`;
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -109,7 +121,7 @@ export async function synthesizeRealtimeAudio(options: {
   const {
     text,
     apiKey,
-    voice = 'maple',
+    voice = 'juniper',
     model = atob('Z3B0LXJlYWx0aW1lLTIuMS1taW5p'),
     timeoutMs = 15000,
     baseUrl = 'https://api.apiyi.com/v1',
@@ -173,7 +185,9 @@ export async function synthesizeRealtimeAudio(options: {
 
     try {
       const cleanBase = stripTrailingSlashes(baseUrl.replace(/^http/, 'ws'));
-      const url = cleanBase.endsWith('/realtime') ? `${cleanBase}?model=${encodeURIComponent(model)}` : `${cleanBase}/realtime?model=${encodeURIComponent(model)}`;
+      const url = cleanBase.endsWith('/realtime')
+        ? `${cleanBase}?model=${encodeURIComponent(model)}`
+        : `${cleanBase}/realtime?model=${encodeURIComponent(model)}`;
       const authSubprotocol = `${atob('b3BlbmFp')}-insecure-api-key.${apiKey}`;
       const subprotocols = ['realtime', authSubprotocol];
 
@@ -188,7 +202,7 @@ export async function synthesizeRealtimeAudio(options: {
               voice,
               output_audio_format: 'pcm16',
             },
-          })
+          }),
         );
 
         ws.send(
@@ -199,7 +213,7 @@ export async function synthesizeRealtimeAudio(options: {
               role: 'user',
               content: [{ type: 'input_text', text }],
             },
-          })
+          }),
         );
 
         ws.send(JSON.stringify({ type: 'response.create' }));
@@ -211,7 +225,10 @@ export async function synthesizeRealtimeAudio(options: {
           const parsed = JSON.parse(raw);
           const { type } = parsed;
 
-          if ((type === 'response.output_audio.delta' || type === 'response.audio.delta') && parsed.delta) {
+          if (
+            (type === 'response.output_audio.delta' || type === 'response.audio.delta') &&
+            parsed.delta
+          ) {
             const buf = base64ToUint8Array(parsed.delta);
             pcmChunks.push(buf);
           } else if (type === 'response.output_item.done' || type === 'response.done') {

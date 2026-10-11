@@ -218,6 +218,13 @@ export function buildVoiceClientCallbacks(deps: VoiceCallbackDependencies): Mini
       toolDispatcherRef.current?.getFsm().escalateCrisis(details.message);
       setCBTStage('Crisis_Escalation');
       useTelemetryStore.getState().setCbtStage('Crisis_Escalation');
+      if (toolDispatcherRef.current) {
+        const fsm = toolDispatcherRef.current.getFsm();
+        useTelemetryStore.getState().updateCbtFsmState({
+          ...fsm.getSnapshot(),
+          history: [...fsm.getHistory()],
+        });
+      }
       setCrisisOverlayOpen(true);
 
       const userStartTime = userSpeechStartTimeRef.current || Date.now() - 1;
