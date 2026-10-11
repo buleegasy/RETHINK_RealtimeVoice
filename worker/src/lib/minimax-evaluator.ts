@@ -63,7 +63,7 @@ export async function evaluateTranscriptWithMiniMax(
           messages: [{ role: 'user', content: prompt }],
         }
       : {
-          model: atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx'),
+          model: atob('Z29vZ2xlL2dlbWluaS0zLjgtZmxhc2g='),
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.2,
         };

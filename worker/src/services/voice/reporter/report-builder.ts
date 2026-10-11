@@ -149,7 +149,7 @@ export async function consolidateDialogueMemory(
     const consolidated = await consolidateSituationalMemoryWithLLM(userId, existingMemory, turns, {
       apiKey: openRouterKey,
       baseUrl: env.OPENROUTER_BASE_URL,
-      model: env.OPENROUTER_MODEL || atob('Z29vZ2xlL2dlbWluaS0yLjAtZmxhc2gtMDAx'),
+      model: env.OPENROUTER_MODEL || atob('Z29vZ2xlL2dlbWluaS0zLjgtZmxhc2g='),
     });
     if (consolidated) {
       await saveSituationalMemory(env, consolidated);
